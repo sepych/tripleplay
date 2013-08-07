@@ -51,41 +51,17 @@ public class ParticleShader extends IndexedTrisShader
 
             // bulk copy m00,m01,m10,m11,tx,ty then add quad info, then copy ar,gb
             int pstart = ppos + ParticleBuffer.M00;
-            
+            vertices.add(data, pstart, 8).add(left,  top).add(0, 0);
+            vertices.add(data, pstart, 8).add(right, top).add(1, 0);
+            vertices.add(data, pstart, 8).add(left,  bot).add(0, 1);
+            vertices.add(data, pstart, 8).add(right, bot).add(1, 1);
 
-            addParticleVert(data, pstart, 8, left,  top, 0, 0);
-            addParticleVert(data, pstart, 8, right, top, 1, 0);
-            addParticleVert(data, pstart, 8, left,  bot, 0, 1);
-            addParticleVert(data, pstart, 8, right, bot, 1, 1);
-            
-//            vertices.add(data, pstart, 8).add(left,  top).add(0, 0);
-//            vertices.add(data, pstart, 8).add(right, top).add(1, 0);
-//            vertices.add(data, pstart, 8).add(left,  bot).add(0, 1);
-//            vertices.add(data, pstart, 8).add(right, bot).add(1, 1);
-
-            elemData[elemIndex++] = (short)(vertIdx+0);
-			elemData[elemIndex++] = (short)(vertIdx+1);
-			elemData[elemIndex++] = (short)(vertIdx+2);
-			elemData[elemIndex++] = (short)(vertIdx+1);
-			elemData[elemIndex++] = (short)(vertIdx+3);
-			elemData[elemIndex++] = (short)(vertIdx+2);
-//            elements.add(vertIdx+0);
-//            elements.add(vertIdx+1);
-//            elements.add(vertIdx+2);
-//            elements.add(vertIdx+1);
-//            elements.add(vertIdx+3);
-//            elements.add(vertIdx+2);
+            elements.add(vertIdx+0);
+            elements.add(vertIdx+1);
+            elements.add(vertIdx+2);
+            elements.add(vertIdx+1);
+            elements.add(vertIdx+3);
+            elements.add(vertIdx+2);
         }
-        
-        private void addParticleVert(float[] data, int offset, int length, float x, float y, float sx, float sy){
-        	for(int i = 0; i < length; i++){
-        		vertData[vertIndex++] = data[offset+i];
-        	}
-        	vertData[vertIndex++] = x;
-        	vertData[vertIndex++] = y;
-        	vertData[vertIndex++] = sx;
-        	vertData[vertIndex++] = sy;
-        }
-        
     }
 }
