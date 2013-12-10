@@ -10,10 +10,8 @@ import pythagoras.f.Point;
 import playn.core.CanvasImage;
 import playn.core.Font;
 import playn.core.GroupLayer;
-import playn.core.Image;
 import playn.core.ImageLayer;
 import playn.core.Layer;
-import playn.core.util.Callback;
 import playn.core.util.Clock;
 import static playn.core.PlayN.*;
 
@@ -67,7 +65,7 @@ public class FlickerDemo extends DemoScreen
 
     protected GroupLayer _group = graphics().createGroupLayer();
     protected Flicker _flicker = new Flicker(0, height()-IMG_HEIGHT*IMG_COUNT, 0) {
-        protected float friction () { return 0.001f; }
+        @Override protected float friction () { return 0.001f; }
     };
 
     protected static final float IMG_HEIGHT = 100;

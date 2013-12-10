@@ -5,9 +5,12 @@
 
 package tripleplay.platform;
 
-import playn.core.Keyboard;
+import playn.core.Image;
+import react.SignalView;
+import react.UnitSignal;
 import react.Value;
 import react.ValueView;
+import tripleplay.ui.Field;
 
 /**
  * The entry point for per-platform services made available by TriplePlay. This is akin to the
@@ -35,32 +38,56 @@ public abstract class TPPlatform
     /**
      * Returns true if this platform supports native text fields.
      */
-    public abstract boolean hasNativeTextFields ();
+    public boolean hasNativeTextFields () {
+        return false;
+    }
 
     /**
-     * Creates a native text field, if this platform supports it.
+     * Creates a native text field, if this platform supports it. If the platform requires it,
+     * the field's styles may be resolved at this time.
      *
      * @exception UnsupportedOperationException thrown if the platform lacks support for native
      * text fields, use {@link #hasNativeTextFields} to check.
      */
-    public abstract NativeTextField createNativeTextField ();
+    public NativeTextField createNativeTextField (Field.Native field) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
-     * Sets the instance of VirtualKeyboardController to use for virtual keyboard management, or
-     * null for none.
+     * Refreshes a native text field to match the current styles of its associated field instance.
+     * Depending on the implementation, a new native field may be returned, or the given one
+     * adjusted.
      */
-    public abstract void setVirtualKeyboardController (VirtualKeyboardController ctrl);
+    public NativeTextField refresh (NativeTextField previous) {
+        throw new UnsupportedOperationException();
+    }
 
-    /**
-     * Set a keyboard listener to receive onKeyTyped events when a native field is active.
-     */
-    public abstract void setVirtualKeyboardListener (Keyboard.Listener listener);
+    /** Sets the instance of KeyboardFocusController to use for keyboard focus management, or
+     * null for none. */
+    public void setKeyboardFocusController (KeyboardFocusController ctrl) {
+        _kfc = ctrl;
+    }
 
-    /**
-     * A value indicating whether the virtual keyboard is currently active or not (if the platform
-     * has one).
-     */
-    public abstract ValueView<Boolean> virtualKeyboardActive ();
+    /** Signal emitted when the user interacts with a native text field. This allows games to
+     * qualify native text field usage as non-idle user behavior. */
+    public SignalView<Void> keyboardActivity () {
+        return _activity;
+    }
+
+    public ImageOverlay createImageOverlay (Image image) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Gets a view of the Field that is currently in focus. Implemented in iOS and JRE if
+     * {@link #hasNativeTextFields()}, otherwise remains null. Corresponds to the tripleplay
+     * field currently receiving native keyboard input. */
+    public ValueView<Field> focus () {
+        return _focus;
+    }
+
+    /** Clears the currently focused field, if any. */
+    public void clearFocus () {
+    }
 
     /** Called by the static register methods in the per-platform backends. */
     static void register (TPPlatform instance) {
@@ -70,19 +97,10 @@ public abstract class TPPlatform
         _instance = instance;
     }
 
-    protected static class Stub extends TPPlatform {
-        @Override public boolean hasNativeTextFields () {
-            return false;
-        }
-        @Override public NativeTextField createNativeTextField () {
-            throw new UnsupportedOperationException();
-        }
-        @Override public void setVirtualKeyboardController (VirtualKeyboardController ctrl) { }
-        @Override public void setVirtualKeyboardListener (Keyboard.Listener listener) { }
-        @Override public ValueView<Boolean> virtualKeyboardActive () { return _false; }
-        protected final Value<Boolean> _false = Value.create(false);
-    }
+    protected Value<Field> _focus = Value.create(null);
+    protected KeyboardFocusController _kfc;
+    protected UnitSignal _activity = new UnitSignal();
 
-    protected static TPPlatform _default = new Stub();
+    protected static TPPlatform _default = new TPPlatform() {};
     protected static TPPlatform _instance = _default;
 }

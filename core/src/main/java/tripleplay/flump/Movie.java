@@ -5,7 +5,6 @@
 
 package tripleplay.flump;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -16,7 +15,6 @@ import pythagoras.f.FloatMath;
 
 import playn.core.Asserts;
 import playn.core.GroupLayer;
-import playn.core.Json;
 import playn.core.Layer;
 import playn.core.util.Clock;
 import static playn.core.PlayN.*;
@@ -36,21 +34,17 @@ public class Movie
         /** The duration of this movie, in milliseconds. */
         public final float duration;
 
-        protected Symbol (Library lib, Json.Object json) {
-            _name = json.getString("id");
-
-            ArrayList<LayerData> layers = new ArrayList<LayerData>();
+        protected Symbol (float frameRate, String name, List<LayerData> layers) {
+            _name = name;
             this.layers = Collections.unmodifiableList(layers);
 
             int frames = 0;
-            for (Json.Object layerJson : json.getArray("layers", Json.Object.class)) {
-                LayerData layer = new LayerData(layerJson);
+            for (LayerData layer : layers) {
                 frames = Math.max(layer.frames(), frames);
-                layers.add(layer);
             }
             this.frames = frames;
 
-            _framesPerMs = lib.frameRate/1000;
+            _framesPerMs = frameRate/1000;
             this.duration = frames/_framesPerMs;
         }
 
@@ -201,7 +195,12 @@ public class Movie
             if (data._multipleSymbols) {
                 _instances = new Instance[data.keyframes.size()];
                 for (int ii = 0, ll = _instances.length; ii < ll; ++ii) {
-                    _instances[ii] = data.keyframes.get(ii).symbol().createInstance();
+                    tripleplay.flump.Symbol sym = data.keyframes.get(ii).symbol();
+                    if (sym == null) {
+                        throw new IllegalArgumentException("Keyframe missing symbol layer=" +
+                            data.name + " frame=" + ii);
+                    }
+                    _instances[ii] = sym.createInstance();
                 }
                 content = graphics().createGroupLayer();
                 setCurrent(_instances[0]);
@@ -296,7 +295,7 @@ public class Movie
             if (_current != current) {
                 _current = current;
                 GroupLayer group = (GroupLayer)content;
-                group.clear();
+                group.removeAll();
                 group.add(current.layer());
             }
         }

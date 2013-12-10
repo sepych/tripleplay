@@ -6,13 +6,12 @@
 package tripleplay.ui;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import pythagoras.f.Dimension;
 import pythagoras.f.IDimension;
 import pythagoras.f.IPoint;
 import pythagoras.f.Point;
-import pythagoras.f.Rectangle;
-
 import playn.core.Asserts;
 import playn.core.Color;
 import playn.core.GroupLayer;
@@ -26,7 +25,6 @@ import playn.core.Mouse.WheelEvent;
 
 import react.Signal;
 
-import tripleplay.anim.Animation;
 import tripleplay.ui.layout.AxisLayout;
 import tripleplay.ui.util.XYFlicker;
 import tripleplay.util.Colors;
@@ -57,9 +55,8 @@ import tripleplay.util.Layers;
  * inactivity. By default, bars are drawn as simple semi-transparent overlays. The color, size and
  * overall rendering can be overridden with styles.</p>
  *
- * <p>NOTE: the scroll group inherits from Elements as an implementation detail: add and remove
- * should never be called directly. To "add" elements, callers should set {@link #content} to a
- * {@code Group} and add things to that.</p>
+ * <p>NOTE: scroller is a composite container, so callers can't add to or remove from it. To "add"
+ * elements, callers should set {@link #content} to a {@code Group} and add things to it.</p>
  *
  * <p>NOTE: since scrolling is done by pointer events, child elements cannot be clicked directly.
  * Instead, basic click handling can be done using the {@link #contentClicked} signal.</p>
@@ -69,28 +66,14 @@ import tripleplay.util.Layers;
  * TODO: optional gutter for scroll bars?
  * TODO: more support for interacting with child elements
  */
-public class Scroller extends Elements<Scroller>
+public class Scroller extends Composite<Scroller>
 {
-    /** The size of scroll bars. */
-    public static final Style<Float> BAR_SIZE = Style.newStyle(true, 5f);
-
-    /** The color of scroll bars. */
-    public static final Style<Integer> BAR_COLOR = Style.newStyle(
-        true, Color.withAlpha(Colors.BLACK, 128));
-
-    /** The renderer for scroll bars, by default a simple {@code Surface.fillRect}. */
-    public static final Style<BarRenderer> BAR_RENDERER = Style.<BarRenderer>newStyle(
-        false, new BarRenderer() {
-            @Override public void drawBar (Surface surface, Rectangle area) {
-                surface.fillRect(area.x,  area.y,  area.width,  area.height);
-            }
-        });
-
-    /** The alpha per ms lost by the scroll bars when not moving. */
-    public static final float BAR_FADE_SPEED = 1.5f / 1000;
-
-    /** The alpha set on the scroll bars whenever they are first shown. */
-    public static final float BAR_TOP_ALPHA = 3;
+    /** The type of bars to use. */
+    public static final Style<BarType> BAR_TYPE = Style.<BarType>newStyle(true, new BarType() {
+        @Override public Bars createBars (Scroller scroller) {
+            return new TouchBars(scroller, Color.withAlpha(Colors.BLACK, 128), 5f, 3f, 1.5f / 1000);
+        }
+    });
 
     /**
      * Interface for customizing how content is clipped and translated.
@@ -114,15 +97,13 @@ public class Scroller extends Elements<Scroller>
     }
 
     /**
-     * Draws a scroll bar onto a surface.
+     * Handles creating the scroll bars.
      */
-    public interface BarRenderer {
+    public static abstract class BarType {
         /**
-         * Draws the bar of the given area. The fill color if the surface is set to the resolved
-         * {@link #BAR_COLOR} style. {@link Surface#save()} and restore are called automatically.
-         * TODO: we may want an orientation passed too
+         * Creates the scroll bars.
          */
-        void drawBar (Surface surface, Rectangle area);
+        public abstract Bars createBars (Scroller scroller);
     }
 
     /**
@@ -163,24 +144,49 @@ public class Scroller extends Elements<Scroller>
     }
 
     /**
-     * A horizontal or vertical scroll bar.
+     * A range along an axis for representing scroll bars. Using the content and view extent,
+     * calculates the relative sizes.
      */
-    public static class Bar {
+    public static class Range {
         /**
-         * Returns the maximum value that this scroll bar can have, in content offset coordinates.
+         * Returns the maximum value that this range can have, in content offset coordinates.
          */
         public float max () {
             return _max;
         }
 
         /**
-         * Tests if the scroll bar is currently active.
+         * Tests if the range is currently active. A range is inactive if it's turned off
+         * explicitly or if the view size is larger than the content size.
          */
         public boolean active () {
             return _max != 0;
         }
 
-        /** Set the view size and content size along this bar's axis. */
+        /** Gets the size of the content along this range's axis. */
+        public float contentSize () {
+            return _on ? _csize : _size;
+        }
+
+        /** Gets the size of the view along this scroll bar's axis. */
+        public float viewSize () {
+            return _size;
+        }
+
+        /** Gets the current content offset. */
+        public float contentPos () {
+            return _cpos;
+        }
+
+        protected void setOn (boolean on) {
+            _on = on;
+        }
+
+        protected boolean on () {
+            return _on;
+        }
+
+        /** Set the view size and content size along this range's axis. */
         protected float setRange (float viewSize, float contentSize) {
             _size = viewSize;
             _csize = contentSize;
@@ -199,17 +205,12 @@ public class Scroller extends Elements<Scroller>
             }
         }
 
-        /** Sets the position of the content along this bar's axis. */
+        /** Sets the position of the content along this range's axis. */
         protected boolean set (float cpos) {
             if (cpos == _cpos) return false;
             _cpos = cpos;
             _pos = _max == 0 ? 0 : cpos / _max * (_size - _extent);
             return true;
-        }
-
-        /** Gets the size of the content along this scroll bar's axis. */
-        protected float getContentSize () {
-            return _on ? _csize : _size;
         }
 
         /** During size computation, extends the provided hint. */
@@ -219,7 +220,7 @@ public class Scroller extends Elements<Scroller>
             return _on ? 100000 : hint;
         }
 
-        /** If this scroll bar is in use. Set according to {@link Scroller.Behavior}. */
+        /** If this range is in use. Set according to {@link Scroller.Behavior}. */
         protected boolean _on = true;
 
         /** View size. */
@@ -239,6 +240,116 @@ public class Scroller extends Elements<Scroller>
 
         /** The maximum position the content can have. */
         protected float _max;
+    }
+
+    /**
+     * Handles the appearance and animation of scroll bars.
+     */
+    public static abstract class Bars
+    {
+        /**
+         * Updates the scroll bars to match the current view and content size. This will be
+         * called during layout, prior to the call to {@link #layer()}.
+         */
+        public void updateView () {}
+
+        /**
+         * Gets the layer to display the scroll bars. It gets added to the same parent as the
+         * content's.
+         */
+        public abstract Layer layer ();
+
+        /**
+         * Updates the scroll bars' time based animation, if any, after the given time delta.
+         */
+        public void update (float dt) {}
+
+        /**
+         * Updates the scroll bars' positions. Not necessary for immediate layer bars.
+         */
+        public void updatePosition () {}
+
+        /**
+         * Destroys the resources created by the bars.
+         */
+        public void destroy () {
+            layer().destroy();
+        }
+
+        /**
+         * Space consumed by active scroll bars.
+         */
+        public float size () {
+            return 0;
+        }
+
+        /**
+         * Creates new bars for the given {@code Scroller}.
+         */
+        protected Bars (Scroller scroller) {
+            _scroller = scroller;
+        }
+
+        protected final Scroller _scroller;
+    }
+
+    /**
+     * Plain rectangle scroll bars that fade out, ideal for drag scrolling.
+     */
+    public static class TouchBars extends Bars
+        implements ImmediateLayer.Renderer 
+    {
+        @Override public void update (float delta) {
+            // fade out the bars
+            if (_alpha > 0 && _fadeSpeed > 0) setBarAlpha(_alpha - _fadeSpeed * delta);
+        }
+
+        @Override public void updatePosition () {
+            // whenever the position changes, update to full visibility
+            setBarAlpha(_topAlpha);
+        }
+
+        @Override public Layer layer () {
+            return _layer;
+        }
+
+        @Override public void render (Surface surface) {
+            surface.save();
+            surface.setFillColor(_color);
+
+            Range h = _scroller.hrange, v = _scroller.vrange;
+            if (h.active()) drawBar(surface, h._pos, v._size - _size, h._extent, _size);
+            if (v.active()) drawBar(surface, h._size - _size, v._pos, _size, v._extent);
+
+            surface.restore();
+        }
+
+        protected TouchBars (Scroller scroller,
+                int color, float size, float topAlpha, float fadeSpeed) {
+            super(scroller);
+            _color = color;
+            _size = size;
+            _topAlpha = topAlpha;
+            _fadeSpeed = fadeSpeed;
+            _layer = PlayN.graphics().createImmediateLayer(this);
+        }
+
+        protected void setBarAlpha (float alpha) {
+            _alpha = Math.min(_topAlpha, Math.max(0, alpha));
+            _layer.setAlpha(Math.min(_alpha, 1));
+            _layer.setVisible(_alpha > 0);
+        }
+
+        protected void drawBar (Surface surface, float x, float y, float w, float h) {
+            surface.fillRect(x, y, w, h);
+        }
+
+        protected float _alpha;
+        protected float _topAlpha;
+        protected float _fadeSpeed;
+        protected int _color;
+        protected float _size;
+        protected Layer _layer;
     }
 
     /**
@@ -278,8 +389,8 @@ public class Scroller extends Elements<Scroller>
     /** The content contained in the scroll group. */
     public final Element<?> content;
 
-    /** Scroll bars. */
-    public final Bar hbar = createBar(), vbar = createBar();
+    /** Scroll ranges. */
+    public final Range hrange = createRange(), vrange = createRange();
 
     /**
      * Creates a new scroll group containing the given content and with {@link Behavior#BOTH}.
@@ -288,17 +399,28 @@ public class Scroller extends Elements<Scroller>
      * Graphics level clipping is always performed.</p>
      */
     public Scroller (Element<?> content) {
-        super(AxisLayout.horizontal().stretchByDefault().offStretch().gap(0));
+        setLayout(AxisLayout.horizontal().stretchByDefault().offStretch().gap(0));
+        // our only immediate child is the _scroller, and that contains the content
+        initChildren(_scroller = new Group(new ScrollLayout()) {
+            @Override protected GroupLayer createLayer () {
+                // use 1, 1 so we don't crash. the real size is set on validation
+                return PlayN.graphics().createGroupLayer(1, 1);
+            }
+            @Override protected void layout () {
+                super.layout();
+                // do this after children have validated their bounding boxes
+                updateVisibility();
+            }
+        });
 
-        // out immediate child is the scroller, and that has the content
-        add(_scroller.add(this.content = content));
+        _scroller.add(this.content = content);
 
         // use the content's clipping method if it is Clippable
         if (content instanceof Clippable) {
             _clippable = (Clippable)content;
 
         } else {
-            // otherwise, clip using layer translation and GroupLayer.Clipped
+            // otherwise, clip using layer translation
             _clippable = new Clippable() {
                 @Override public void setViewArea (float width, float height) { /* noop */ }
                 @Override public void setPosition (float x, float y) {
@@ -315,7 +437,7 @@ public class Scroller extends Elements<Scroller>
             @Override public void onMouseWheelScroll (WheelEvent event) {
                 // scale so each wheel notch is 1/4 the screen dimension
                 float delta = event.velocity() * .25f;
-                if (vbar.active()) scrollY(ypos() + (int)(delta * viewSize().height()));
+                if (vrange.active()) scrollY(ypos() + (int)(delta * viewSize().height()));
                 else scrollX(xpos() + (int)(delta * viewSize().width()));
             }
         });
@@ -325,17 +447,17 @@ public class Scroller extends Elements<Scroller>
     }
 
     /**
-     * Sets the behavior of this scroll bar.
+     * Sets the behavior of this scroller.
      */
     public Scroller setBehavior (Behavior beh) {
-        hbar._on = beh.hasHorizontal();
-        vbar._on = beh.hasVertical();
+        hrange.setOn(beh.hasHorizontal());
+        vrange.setOn(beh.hasVertical());
         invalidate();
         return this;
     }
 
     /**
-     * Adds a listener to be notified of this scroll group's changes.
+     * Adds a listener to be notified of this scroller's changes.
      */
     public void addListener (Listener lner) {
         if (_lners == null) _lners = new ArrayList<Listener>();
@@ -343,7 +465,7 @@ public class Scroller extends Elements<Scroller>
     }
 
     /**
-     * Removes a previously added listener from this scroll group.
+     * Removes a previously added listener from this scroller.
      */
     public void removeListener (Listener lner) {
         if (_lners != null) _lners.remove(lner);
@@ -353,14 +475,14 @@ public class Scroller extends Elements<Scroller>
      * Returns the offset of the left edge of the view area relative to that of the content.
      */
     public float xpos () {
-        return hbar._cpos;
+        return hrange._cpos;
     }
 
     /**
      * Returns the offset of the top edge of the view area relative to that of the content.
      */
     public float ypos () {
-        return vbar._cpos;
+        return vrange._cpos;
     }
 
     /**
@@ -384,8 +506,8 @@ public class Scroller extends Elements<Scroller>
      * clipped to be within their respective valid ranges.
      */
     public void scroll (float x, float y) {
-        x = Math.max(0, Math.min(x, hbar._max));
-        y = Math.max(0, Math.min(y, vbar._max));
+        x = Math.max(0, Math.min(x, hrange._max));
+        y = Math.max(0, Math.min(y, vrange._max));
         _flicker.positionChanged(x, y);
     }
 
@@ -421,30 +543,18 @@ public class Scroller extends Elements<Scroller>
         return _flicker.clicked;
     }
 
-    @Override public Scroller add (Element<?>... children) {
-        Asserts.checkState(childCount() + children.length == 1);
-        return super.add(children);
-    }
-
-    @Override public Scroller add (int index, Element<?> child) {
-        Asserts.checkState(childCount() == 0);
-        return super.add(index, child);
-    }
-
     /** Prepares the scroll group for the next frame, at t = t + delta. */
     protected void update (float delta) {
         _flicker.update(delta);
         update(false);
-
-        // fade out the bars
-        if (_barAlpha > 0) setBarAlpha(_barAlpha - BAR_FADE_SPEED * delta);
+        if (_bars != null) _bars.update(delta);
     }
 
     /** Updates the position of the content to match the flicker. If force is set, then the
      * relevant values will be updated even if there was no change. */
     protected void update (boolean force) {
         IPoint pos = _flicker.position();
-        boolean dx = hbar.set(pos.x()), dy = vbar.set(pos.y());
+        boolean dx = hrange.set(pos.x()), dy = vrange.set(pos.y());
         if (dx || dy || force) {
             _clippable.setPosition(-pos.x(), -pos.y());
 
@@ -452,16 +562,17 @@ public class Scroller extends Elements<Scroller>
             if (!force) updateVisibility();
 
             firePositionChange();
-            setBarAlpha(BAR_TOP_ALPHA);
+            if (_bars != null) _bars.updatePosition();
         }
     }
 
     /**
-     * A method for creating our Bar instances. This is called once each for hbar and vbar at object
-     * creation time. Overriding this method will allow subclasses to customize Bar behavior.
+     * A method for creating our {@code Range} instances. This is called once each for {@code
+     * hrange} and {@code vrange} at creation time. Overriding this method will allow subclasses
+     * to customize {@code Range} behavior.
      */
-    protected Bar createBar ()  {
-        return new Bar();
+    protected Range createRange ()  {
+        return new Range();
     }
 
     @Override protected LayoutData createLayoutData (float hintX, float hintY) {
@@ -474,38 +585,32 @@ public class Scroller extends Elements<Scroller>
 
     @Override protected void wasAdded () {
         super.wasAdded();
-        _updater = root().iface().animator().add(new Animation() {
-            float current = 0;
-            @Override protected void init (float time) {
-                super.init(time);
-                current = time;
-            }
-            @Override protected float apply (float time) {
-                float dt = time - current;
-                current = time;
+        _updater = root().iface().addTask(new Interface.Task() {
+            @Override public void update (int dt) {
                 Scroller.this.update(dt);
-                return 1;
             }
-        }).handle();
+        });
+        invalidate();
     }
 
     @Override protected void wasRemoved () {
+        _updater.remove();
+        updateBars(null); // make sure bars get destroyed in case we don't get added again
         super.wasRemoved();
-        _updater.cancel();
     }
 
     /** Hides the layers of any children of the content that are currently visible but outside
      * the clipping area. */
     // TODO: can we get the performance win without being so intrusive?
     protected void updateVisibility () {
-        // non-Elements can't participate, they must implement Clippable and do something else
-        if (!(content instanceof Elements)) {
+        // only Container can participate, others must implement Clippable and do something else
+        if (!(content instanceof Container)) {
             return;
         }
 
         // hide the layer of any child of content that isn't in bounds
-        float x = hbar._cpos, y = vbar._cpos, wid = hbar._size, hei = vbar._size;
-        for (Element<?> child : (Elements<?>)content) {
+        float x = hrange._cpos, y = vrange._cpos, wid = hrange._size, hei = vrange._size;
+        for (Element<?> child : (Container<?>)content) {
             IDimension size = child.size();
             if (child.isVisible()) child.layer.setVisible(
                 child.x() < x + wid && child.x() + size.width() > x &&
@@ -531,85 +636,60 @@ public class Scroller extends Elements<Scroller>
         }
     }
 
-    /** Sets the alpha of the scroll bars layer. */
-    protected void setBarAlpha (float alpha) {
-        _barAlpha = Math.min(BAR_TOP_ALPHA, Math.max(0, alpha));
-        if (_barLayer != null) {
-            _barLayer.setAlpha(Math.min(_barAlpha, 1));
-            _barLayer.setVisible(_barAlpha > 0);
+    protected void updateBars (BarType barType) {
+        if (_bars != null) {
+            if (_barType == barType) return;
+            _bars.destroy();
+            _bars = null;
         }
+        _barType = barType;
+        if (_barType != null) _bars = _barType.createBars(this);
     }
 
-    /** Extends the usual Elements layout with scroll bar setup. */
-    protected class BarsLayoutData extends ElementsLayoutData
+    /** Extends the usual layout with scroll bar setup. */
+    protected class BarsLayoutData extends CompositeLayoutData
     {
-        public final int barColor = resolveStyle(BAR_COLOR);
-        public final float barSize = resolveStyle(BAR_SIZE).floatValue();
-        public final BarRenderer barRenderer = resolveStyle(BAR_RENDERER);
+        public final BarType barType = resolveStyle(BAR_TYPE);
 
         @Override
         public void layout (float left, float top, final float width, final float height) {
+            // set the bars first so the ScrollLayout can use it
+            updateBars(barType);
             super.layout(left, top, width, height);
-
-            // all children are now validated, update layer visibility
-            updateVisibility();
-
-            ImmediateLayer bars = null;
-
-            if (barRenderer != null && (hbar.active() || vbar.active())) {
-                // make a new layer to render the scroll bars
-                bars = PlayN.graphics().createImmediateLayer(new ImmediateLayer.Renderer() {
-
-                    final Rectangle area = new Rectangle();
-
-                    @Override public void render (Surface surface) {
-                        surface.save();
-                        surface.setFillColor(barColor);
-
-                        if (hbar.active()) {
-                            area.setBounds(hbar._pos, height - barSize, hbar._extent, barSize);
-                            barRenderer.drawBar(surface, area);
-                        }
-
-                        if (vbar.active()) {
-                            area.setBounds(width - barSize, vbar._pos, barSize, vbar._extent);
-                            barRenderer.drawBar(surface, area);
-                        }
-
-                        surface.restore();
-                    }
-                });
-            }
-
-            // out with the old, in with the new
-            if (_barLayer != null) _barLayer.destroy();
-            if ((_barLayer = bars) != null) _scroller.layer.add(
-                _barLayer.setDepth(1).setAlpha(_barAlpha));
+            if (_bars != null) layer.add(_bars.layer().setDepth(1).setTranslation(left,  top));
         }
     }
 
     /** Lays out the internal scroller group that contains the content. Performs all the jiggery
-     * pokery necessary to make the content think it is in a large area and keep the outer
-     * Scroller up to date. */
+     * pokery necessary to make the content think it is in a large area and update the outer
+     * {@code Scroller} instance. */
     protected class ScrollLayout extends Layout
     {
         @Override public Dimension computeSize (Container<?> elems, float hintX, float hintY) {
             // the content is always the 1st child, get the preferred size with extended hints
             Asserts.checkArgument(elems.childCount() == 1 && elems.childAt(0) == content);
             _contentSize.setSize(preferredSize(elems.childAt(0),
-                hbar.extendHint(hintX), vbar.extendHint(hintY)));
+                hrange.extendHint(hintX), vrange.extendHint(hintY)));
             return new Dimension(_contentSize);
         }
 
         @Override public void layout (Container<?> elems, float left, float top, float width,
                                       float height) {
             Asserts.checkArgument(elems.childCount() == 1 && elems.childAt(0) == content);
-            // reset range of scroll bars
-            left = hbar.setRange(width, _contentSize.width);
-            top = vbar.setRange(height, _contentSize.height);
+
+            // if we're going to have H or V scrolling, make room on the bottom and/or right
+            if (hrange.on() && _contentSize.width > width) height -= _bars.size();
+            if (vrange.on() && _contentSize.height > height) width -= _bars.size();
+
+            // reset ranges
+            left = hrange.setRange(width, _contentSize.width);
+            top = vrange.setRange(height, _contentSize.height);
+
+            // let the bars know about the range change
+            if (_bars != null) _bars.updateView();
 
             // set the content bounds to the large virtual area starting at 0, 0
-            setBounds(content, 0, 0, hbar.getContentSize(), vbar.getContentSize());
+            setBounds(content, 0, 0, hrange.contentSize(), vrange.contentSize());
 
             // clip the content in its own special way
             _clippable.setViewArea(width, height);
@@ -618,7 +698,7 @@ public class Scroller extends Elements<Scroller>
             ((GroupLayer.Clipped)_scroller.layer).setSize(width, height);
 
             // reset the flicker (it retains its current position)
-            _flicker.reset(hbar.max(), vbar.max());
+            _flicker.reset(hrange.max(), vrange.max());
 
             // scroll the content
             if (_queuedScroll != null) {
@@ -636,20 +716,17 @@ public class Scroller extends Elements<Scroller>
         }
     }
 
-    protected final Group _scroller = new Group(new ScrollLayout()) {
-        @Override protected GroupLayer createLayer () {
-            // use 1, 1 so we don't crash. the real size is set on validation
-            return PlayN.graphics().createGroupLayer(1, 1);
-        }
-    };
-
+    protected final Group _scroller;
     protected final XYFlicker _flicker;
     protected final Clippable _clippable;
     protected final Dimension _contentSize = new Dimension();
-    protected Animation.Handle _updater;
-    protected Layer _barLayer;
+    protected Interface.TaskHandle _updater;
     protected Point _queuedScroll;
-    protected float _barAlpha;
-    protected BarRenderer _barRenderer;
-    protected java.util.List<Listener> _lners;
+    protected List<Listener> _lners;
+
+    /** Scroll bar type, used to determine if the bars need to be recreated. */
+    protected BarType _barType;
+
+    /** Scroll bars, created during layout, based on the {@link BarType}. */
+    protected Bars _bars;
 }

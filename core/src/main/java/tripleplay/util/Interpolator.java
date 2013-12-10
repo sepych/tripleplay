@@ -5,6 +5,8 @@
 
 package tripleplay.util;
 
+import pythagoras.f.MathUtil;
+
 /**
  * Abstracts the process of interpolation between two values.
  */
@@ -78,6 +80,40 @@ public abstract class Interpolator
         }
     };
 
+    public static Interpolator BOUNCE_OUT = new Interpolator() {
+        @Override public float apply (float start, float range, float dt, float t) {
+
+            float dtt = dt / t;
+
+            if ((dtt) < (1/2.75f)) {
+                return range*(7.5625f*dtt*dtt) + start;
+            } else if (dtt < (2/2.75f)) {
+                float dttBounce = dtt - (1.5f/2.75f);
+                return range*(7.5625f*dttBounce*dttBounce + .75f) + start;
+            } else if (dtt < (2.5/2.75)) {
+                float dttBounce = dtt - (2.25f/2.75f);
+                return range*(7.5625f*dttBounce*dttBounce + .9375f) + start;
+            } else {
+                float dttBounce = dtt - (2.625f/2.75f);
+                return range*(7.5625f*dttBounce*dttBounce + .984375f) + start;
+            }
+        }
+    };
+
+    /** An interpolator that eases past the final value then back towards it elastically. */
+    public static Interpolator EASE_OUT_ELASTIC = new Interpolator() {
+        @Override public float apply (float start, float range, float dt, float t) {
+            if (dt==0) return range;
+            float dtt = dt / t;
+            if (dtt == 1) return range+start;
+            float p = t * .3f;
+            float a = start;
+            float s = p/4;
+            return (a*(float)Math.pow(2,-10*dtt) *
+                (float)Math.sin((dtt*t-s) * (2*(float)Math.PI)/p) + start + range);
+        }
+    };
+
     /**
      * Interpolates between two values.
      *
@@ -88,4 +124,12 @@ public abstract class Interpolator
      * returned.
      */
     public abstract float apply (float start, float range, float dt, float t);
+
+    /**
+     * Interpolates between two values, as in {@link #apply} except that {@code dt} is clamped to
+     * [0..t] to avoid interpolation weirdness if {@code dt} is ever negative or exceeds {@code t}.
+     */
+    public float applyClamp (float start, float range, float dt, float t) {
+        return apply(start, range, MathUtil.clamp(dt, 0, t), t);
+    }
 }

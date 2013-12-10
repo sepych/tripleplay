@@ -5,22 +5,55 @@
 
 package tripleplay.demo;
 
+import java.util.List;
+
+import com.google.common.collect.Lists;
+
+import playn.core.Image;
 import playn.core.PlayN;
 import playn.java.JavaPlatform;
+import playn.java.SWTPlatform;
 import tripleplay.platform.JavaTPPlatform;
+import tripleplay.platform.SWTTPPlatform;
 
 public class TripleDemoJava
 {
     public static void main (String[] args) {
         JavaPlatform.Config config = new JavaPlatform.Config();
-        JavaPlatform platform = JavaPlatform.register(config);
-        TripleDemo.mainArgs = args;
+        config.appName = "Tripleplay Demo";
 
-        // TODO: upgrade to include other systems
-        if (System.getProperty("os.name").contains("Linux")) {
-            JavaTPPlatform.register(platform, config);
+        boolean swt = false;
+        List<String> mainArgs = Lists.newArrayList();
+        for (int ii = 0; ii < args.length; ii++) {
+            String size = "--size=";
+            if (args[ii].startsWith(size)) {
+                String[] wh = args[ii].substring(size.length()).split("x");
+                config.width = Integer.parseInt(wh[0]);
+                config.height = Integer.parseInt(wh[1]);
+                continue;
+            }
+            if (args[ii].equals("--swt")) {
+                swt = true;
+                continue;
+            }
+            mainArgs.add(args[ii]);
         }
 
+        TripleDemo.mainArgs = mainArgs.toArray(new String[0]);
+        if (swt) {
+            config.appName += " (SWT)";
+            SWTPlatform platform = SWTPlatform.register(config);
+            SWTTPPlatform.register(platform, config);
+            SWTTPPlatform.instance().setIcon(loadIcon());
+        } else {
+            JavaPlatform platform = JavaPlatform.register(config);
+            JavaTPPlatform.register(platform, config);
+            JavaTPPlatform.instance().setIcon(loadIcon());
+        }
         PlayN.run(new TripleDemo());
+    }
+
+    protected static Image loadIcon () {
+        return PlayN.assets().getImageSync("icon.png");
     }
 }

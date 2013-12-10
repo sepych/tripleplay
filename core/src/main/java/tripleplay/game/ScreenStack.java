@@ -35,7 +35,7 @@ public class ScreenStack
     /** Implements a particular screen transition. */
     public interface Transition {
         /** Direction constants, used by transitions. */
-        enum Dir { UP, DOWN, LEFT, RIGHT; };
+        enum Dir { UP, DOWN, LEFT, RIGHT; }
 
         /** Allows the transition to pre-compute useful values. This will immediately be followed
          * by call to {@link #update} with an elapsed time of zero. */
@@ -104,7 +104,7 @@ public class ScreenStack
         } else {
             final Screen otop = top();
             transition(new Transitor(otop, screen, trans) {
-                protected void onComplete() { hide(otop); }
+                @Override protected void onComplete() { hide(otop); }
             });
         }
     }
@@ -136,7 +136,7 @@ public class ScreenStack
                 last = screen;
             }
             transition(new Transitor(otop, last, trans) {
-                protected void onComplete() { hide(otop); }
+                @Override protected void onComplete() { hide(otop); }
             });
         }
     }
@@ -183,7 +183,7 @@ public class ScreenStack
             final Screen otop = _screens.remove(0);
             // log.info("Removed " + otop + ", new top " + top());
             transition(new Transitor(otop, screen, trans) {
-                protected void onComplete () {
+                @Override protected void onComplete () {
                     hide(otop);
                     wasRemoved(otop);
                 }
@@ -212,7 +212,7 @@ public class ScreenStack
             final Screen otop = _screens.remove(0);
             // log.info("Removed " + otop + ", new top " + top());
             transition(new Untransitor(otop, top(), trans) {
-                protected void onComplete () {
+                @Override protected void onComplete () {
                     hide(otop);
                     wasRemoved(otop);
                 }
@@ -353,6 +353,19 @@ public class ScreenStack
         _transitor.init();
     }
 
+    /**
+     * A hacky mechanism to allow a game to force a transition to skip some number of frames at its
+     * start. If a game's screens tend to do a lot of image loading in wasAdded or immediately
+     * after, that will cause an unpleasant jerk at the start of the transition as the first frame
+     * or two have order of magnitude larger frame deltas than subsequent frames. Having those
+     * render as t=0 and then starting the timer after the skipped frames are done delays the
+     * transition by a bit, but ensures that when things are actually animating, that they are nice
+     * and smooth.
+     */
+    protected int transSkipFrames () {
+        return 0;
+    }
+
     protected class Transitor {
         public Transitor (Screen oscreen, Screen nscreen, Transition trans) {
             _oscreen = oscreen;
@@ -385,7 +398,9 @@ public class ScreenStack
         public void paint (Clock clock) {
             _oscreen.paint(clock);
             _nscreen.paint(clock);
-            _complete = _trans.update(_oscreen, _nscreen, _elapsed += clock.dt());
+            if (_skipFrames > 0) _skipFrames -= 1;
+            else _elapsed += clock.dt();
+            _complete = _trans.update(_oscreen, _nscreen, _elapsed);
         }
 
         public void complete () {
@@ -408,6 +423,7 @@ public class ScreenStack
 
         protected final Screen _oscreen, _nscreen;
         protected final Transition _trans;
+        protected int _skipFrames = transSkipFrames();
         protected float _elapsed;
         protected boolean _complete;
     }

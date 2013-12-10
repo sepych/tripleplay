@@ -6,8 +6,10 @@
 package tripleplay.ui;
 
 import playn.core.Canvas;
-import playn.core.Pointer;
+
 import react.UnitSlot;
+
+import tripleplay.util.Glyph;
 
 /**
  * Base for widgets that consist of a single glyph. Performs all boilerplate layout stuff and
@@ -30,15 +32,12 @@ public abstract class GlyphWidget<T extends GlyphWidget<T>> extends SizableWidge
      * Creates a new glyph widget with no initial size and optionally interactive. The widget will
      * not be functional until one of the sizing methods is called (in {@link SizableWidget}.
      */
-    protected GlyphWidget (boolean interactive) {
-        if (interactive) enableInteraction();
-    }
+    protected GlyphWidget () {}
 
     /**
      * Creates a new glyph widget with the given preferred size.
      */
-    protected GlyphWidget (boolean interactive, float width, float height) {
-        this(interactive);
+    protected GlyphWidget (float width, float height) {
         preferredSize.update(width, height);
     }
 
@@ -56,18 +55,7 @@ public abstract class GlyphWidget<T extends GlyphWidget<T>> extends SizableWidge
      * Paints this widget onto the given canvas. This is called by render. The canvas is from
      * the {@link #_glyph} member, which is already prepared to the correct laid out size.
      */
-    abstract protected void paint (Canvas canvas);
-
-    /** Notifies this widget that the pointer or mouse has been pressed and release inside the
-     * bounds of the widget. */
-    protected void onClick (Pointer.Event event) {
-        // nothing by default
-    }
-
-    @Override protected void onPointerEnd (Pointer.Event event, float x, float y) {
-        super.onPointerEnd(event, x, y);
-        if (contains(x, y)) onClick(event);
-    }
+    protected abstract void paint (Canvas canvas);
 
     @Override protected BaseLayoutData createBaseLayoutData (float hintX, float hintY) {
         return new GlyphLayoutData();
@@ -88,5 +76,5 @@ public abstract class GlyphWidget<T extends GlyphWidget<T>> extends SizableWidge
         }
     }
 
-    protected final Glyph _glyph = new Glyph();
+    protected final Glyph _glyph = new Glyph(layer);
 }

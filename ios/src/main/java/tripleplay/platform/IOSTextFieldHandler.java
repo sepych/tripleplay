@@ -26,13 +26,10 @@ import cli.System.Drawing.RectangleF;
 import cli.System.Drawing.SizeF;
 
 import playn.core.Font;
-import playn.core.Keyboard;
 import playn.core.PlayN;
 import playn.ios.IOSFont;
 import playn.ios.IOSPlatform;
 import pythagoras.f.Point;
-import react.Value;
-import react.ValueView;
 
 import static tripleplay.platform.Log.log;
 
@@ -42,6 +39,7 @@ import static tripleplay.platform.Log.log;
 public class IOSTextFieldHandler
 {
     public IOSTextFieldHandler (IOSTPPlatform platform) {
+        _platform = platform;
         _overlay = platform.platform.uiOverlay();
         _touchDetector = new TouchDetector(_overlay.get_Bounds());
 
@@ -54,6 +52,12 @@ public class IOSTextFieldHandler
                     IOSNativeTextField field = _activeFields.get(nf.get_Object());
                     if (field != null) field.handleNewValue();
                 }}),
+            // dispatches text starting edit
+            didBegin = new cli.System.Action$$00601_$$$_Lcli__MonoTouch__Foundation__NSNotification_$$$$_(new cli.System.Action$$00601_$$$_Lcli__MonoTouch__Foundation__NSNotification_$$$$_.Method() {
+                @Override public void Invoke (NSNotification nf) {
+                    IOSNativeTextField field = _activeFields.get(nf.get_Object());
+                    if (field != null) field.didStart();
+                }}),
             // dispatches text end notifications
             didEnd = new cli.System.Action$$00601_$$$_Lcli__MonoTouch__Foundation__NSNotification_$$$$_(new cli.System.Action$$00601_$$$_Lcli__MonoTouch__Foundation__NSNotification_$$$$_.Method() {
                 @Override public void Invoke (NSNotification nf) {
@@ -64,10 +68,12 @@ public class IOSTextFieldHandler
         NSNotificationCenter center = NSNotificationCenter.get_DefaultCenter();
 
         // observe UITextField
+        center.AddObserver(UITextField.get_TextDidBeginEditingNotification(), didBegin);
         center.AddObserver(UITextField.get_TextFieldTextDidChangeNotification(), change);
         center.AddObserver(UITextField.get_TextDidEndEditingNotification(), didEnd);
 
         // observe UITextView
+        center.AddObserver(UITextView.get_TextDidBeginEditingNotification(), didBegin);
         center.AddObserver(UITextView.get_TextDidChangeNotification(), change);
         center.AddObserver(UITextView.get_TextDidEndEditingNotification(), didEnd);
 
@@ -110,7 +116,6 @@ public class IOSTextFieldHandler
 
                     // touches outside of the keyboard will close the keyboard
                     _overlay.Add(_touchDetector);
-                    _keyboardActive.update(true);
                 }}));
 
         center.AddObserver(UIKeyboard.get_WillHideNotification(),
@@ -125,7 +130,7 @@ public class IOSTextFieldHandler
                     _gameViewTransform = null;
                     _gameViewTransformed = false;
                     _touchDetector.RemoveFromSuperview();
-                    _keyboardActive.update(false);
+                    _platform._focus.update(null);
                 }}));
 
         _currentOrientation = UIDevice.get_CurrentDevice().get_Orientation().Value;
@@ -135,8 +140,9 @@ public class IOSTextFieldHandler
                 public void Invoke (NSNotification nf) {
                     UIDeviceOrientation orient = UIDevice.get_CurrentDevice().get_Orientation();
                     if (orient.Value == _currentOrientation) return; // NOOP
-                    if (!((IOSPlatform)PlayN.platform()).supportedOrients().isSupported(orient))
+                    if (!((IOSPlatform)PlayN.platform()).supportedOrients().isSupported(orient)) {
                         return; // unsupported orientation, no rotation
+                    }
                     _currentOrientation = orient.Value;
 
                     if (_gameViewTransformed) {
@@ -146,21 +152,6 @@ public class IOSTextFieldHandler
                         if (firstResponder != null) firstResponder.getView().ResignFirstResponder();
                     }
                 }}));
-    }
-
-    public void setVirtualKeyboardController (VirtualKeyboardController ctrl) {
-        _virtualKeyboardCtrl = ctrl;
-    }
-
-    /**
-     * Set a keyboard listener to receive onKeyTyped events when a native field is active.
-     */
-    public void setKeyboardListener (Keyboard.Listener listener) {
-        _keyboardListener = listener;
-    }
-
-    public ValueView<Boolean> virtualKeyboardActive () {
-        return _keyboardActive;
     }
 
     public UIFont getUIFont (Font font) {
@@ -190,10 +181,6 @@ public class IOSTextFieldHandler
         field.getView().RemoveFromSuperview();
     }
 
-    public boolean isAdded (UIView field) {
-        return field.IsDescendantOfView(_overlay);
-    }
-
     protected IOSNativeTextField findFirstResponder () {
         for (Map.Entry<UIView, IOSNativeTextField> entry : _activeFields.entrySet()) {
             if (entry.getKey().get_IsFirstResponder()) return entry.getValue();
@@ -217,10 +204,12 @@ public class IOSTextFieldHandler
             // let through any touch that the virtual keyboard controller wants to allow.
             if (!hideVirtualKeyboardAt(pointF)) return false;
             // allow through touches that hit text fields we manage
-            for (IOSNativeTextField field : _activeFields.values())
+            for (IOSNativeTextField field : _activeFields.values()) {
                 if (field.getView().PointInside(
-                        ConvertPointToView(pointF, field.getView()), uiEvent))
+                        ConvertPointToView(pointF, field.getView()), uiEvent)) {
                     return false;
+                }
+            }
             // else absorb the hit at this point so that we can hide the keyboard in TouchesBegan
             return true;
         }
@@ -228,15 +217,15 @@ public class IOSTextFieldHandler
         protected boolean hideVirtualKeyboardAt (PointF pointF) {
             PointF overlay = ConvertPointToView(pointF, _overlay);
             Point pythagOverlay = new Point(overlay.get_X(), overlay.get_Y());
-            return _virtualKeyboardCtrl == null ||
-                _virtualKeyboardCtrl.hideKeyboardForTouch(pythagOverlay);
+            return _platform._kfc == null ||
+                    _platform._kfc.unfocusForLocation(pythagOverlay);
         }
     }
 
+    protected IOSTPPlatform _platform;
     protected final UIView _overlay;
     protected final Map<UIView, IOSNativeTextField> _activeFields =
         new HashMap<UIView, IOSNativeTextField>();
-    protected final Value<Boolean> _keyboardActive = Value.create(false);
 
     // we specifically track whether we've transformed the game view in a boolean because
     // CGAffineTransform is a value class and cannot be null
@@ -245,6 +234,4 @@ public class IOSTextFieldHandler
     protected int _currentOrientation;
 
     protected TouchDetector _touchDetector;
-    protected VirtualKeyboardController _virtualKeyboardCtrl;
-    protected Keyboard.Listener _keyboardListener;
 }

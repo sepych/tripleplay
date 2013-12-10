@@ -59,6 +59,7 @@ public abstract class Animation
             setFrame(0);
         }
 
+        @Override
         protected float apply (float time) {
             float dt = time - _start;
             int newIdx = _curIdx;
@@ -117,6 +118,16 @@ public abstract class Animation
         /** Uses an ease-out-back interpolator for this animation. */
         public R easeOutBack () {
             return using(Interpolator.EASE_OUT_BACK);
+        }
+
+        /** Uses an ease-out-back interpolator for this animation. */
+        public R bounceOut () {
+            return using(Interpolator.BOUNCE_OUT);
+        }
+
+        /** Uses an ease-out-elastic interpolator for this animation. */
+        public R easeOutElastic () {
+            return using(Interpolator.EASE_OUT_ELASTIC);
         }
 
         /** Configures the duration for this animation (in milliseconds). Default: 1000. */

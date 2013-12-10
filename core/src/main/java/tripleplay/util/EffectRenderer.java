@@ -5,9 +5,12 @@
 
 package tripleplay.util;
 
+import playn.core.Asserts;
 import playn.core.Canvas;
+import playn.core.PlayN;
 import playn.core.TextLayout;
 import pythagoras.f.Rectangle;
+import tripleplay.ui.Style;
 
 /**
  * Handles the rendering of text with a particular effect (shadow, outline, etc.).
@@ -16,8 +19,8 @@ public abstract class EffectRenderer
 {
     /** An "effect" that just renders the text normally. */
     public static final EffectRenderer NONE = new EffectRenderer() {
-        public void render (Canvas canvas, TextLayout layout, int textColor, boolean underlined,
-            float x, float y) {
+        @Override public void render (Canvas canvas, TextLayout layout, int textColor,
+            boolean underlined, float x, float y) {
             canvas.save();
             canvas.setFillColor(textColor);
             if (underlined) {
@@ -36,6 +39,8 @@ public abstract class EffectRenderer
 
     public float adjustWidth (float width) { return width; }
     public float adjustHeight (float height) { return height; }
+    public float offsetX () { return 0; }
+    public float offsetY () { return 0; }
 
     public abstract void render (Canvas canvas, TextLayout layout, int textColor,
         boolean underlined, float x, float y);
@@ -47,11 +52,11 @@ public abstract class EffectRenderer
             this.outlineColor = outlineColor;
         }
 
-        public float adjustWidth (float width) { return width + 2; }
-        public float adjustHeight (float height) { return height + 2; }
+        @Override public float adjustWidth (float width) { return width + 2; }
+        @Override public float adjustHeight (float height) { return height + 2; }
 
-        public void render (Canvas canvas, TextLayout text, int textColor, boolean underlined,
-            float x, float y) {
+        @Override public void render (Canvas canvas, TextLayout text, int textColor,
+            boolean underlined, float x, float y) {
             canvas.save();
             if (underlined) {
                 for (int ii = 0; ii < text.lineCount(); ii++) {
@@ -106,12 +111,19 @@ public abstract class EffectRenderer
             this.outlineJoin = join;
         }
 
-        public float adjustWidth (float width) { return width + 2*outlineWidth; }
-        public float adjustHeight (float height) { return height + 2*outlineWidth; }
+        @Override public float adjustWidth (float width) { return width + 2*outlineWidth; }
+        @Override public float adjustHeight (float height) { return height + 2*outlineWidth; }
 
-        public void render (Canvas canvas, TextLayout text, int textColor, boolean underlined,
-            float x, float y) {
+        @Override public void render (Canvas canvas, TextLayout text, int textColor,
+            boolean underlined, float x, float y) {
             canvas.save();
+            canvas.setStrokeColor(outlineColor);
+            canvas.setStrokeWidth(outlineWidth*2);
+            canvas.setLineCap(outlineCap);
+            canvas.setLineJoin(outlineJoin);
+            canvas.strokeText(text, x+outlineWidth, y+outlineWidth);
+            canvas.setFillColor(textColor);
+            canvas.fillText(text, x+outlineWidth, y+outlineWidth);
             if (underlined) {
                 for (int ii = 0; ii < text.lineCount(); ii++) {
                     Rectangle bounds = text.lineBounds(ii);
@@ -122,13 +134,6 @@ public abstract class EffectRenderer
                     canvas.fillRect(sx, sy, bounds.width(), 1);
                 }
             }
-            canvas.setStrokeColor(outlineColor);
-            canvas.setStrokeWidth(outlineWidth*2);
-            canvas.setLineCap(outlineCap);
-            canvas.setLineJoin(outlineJoin);
-            canvas.strokeText(text, x+outlineWidth, y+outlineWidth);
-            canvas.setFillColor(textColor);
-            canvas.fillText(text, x+outlineWidth, y+outlineWidth);
             canvas.restore();
         }
 
@@ -155,11 +160,11 @@ public abstract class EffectRenderer
             this.shadowY = shadowY;
         }
 
-        public float adjustWidth (float width) { return width + Math.abs(shadowX); }
-        public float adjustHeight (float height) { return height + Math.abs(shadowY); }
+        @Override public float adjustWidth (float width) { return width + Math.abs(shadowX); }
+        @Override public float adjustHeight (float height) { return height + Math.abs(shadowY); }
 
-        public void render (Canvas canvas, TextLayout text, int textColor, boolean underlined,
-            float x, float y) {
+        @Override public void render (Canvas canvas, TextLayout text, int textColor,
+            boolean underlined, float x, float y) {
             float tx = (shadowX < 0) ? -shadowX : 0, ty = (shadowY < 0) ? -shadowY : 0;
             float sx = (shadowX < 0) ? 0 : shadowX, sy = (shadowY < 0) ? 0 : shadowY;
             canvas.save();
@@ -190,6 +195,69 @@ public abstract class EffectRenderer
 
         @Override public int hashCode () {
             return shadowColor ^ (int)shadowX ^ (int)shadowY;
+        }
+    }
+
+    public static class Gradient extends EffectRenderer {
+        public final int gradientColor;
+        public final Style.GradientType gradientType;
+
+        public Gradient (int gradientColor, Style.GradientType gradientType) {
+            this.gradientColor = gradientColor;
+            this.gradientType = gradientType;
+        }
+
+        @Override public void render (Canvas canvas, TextLayout text, int textColor,
+            boolean underlined, float x, float y) {
+
+            int colors[] = null;
+            float positions[] = null;
+
+            switch (gradientType) {
+            case BOTTOM:
+                colors = new int[] {textColor, gradientColor};
+                positions = new float[] {0, 1};
+                break;
+            case TOP:
+                colors = new int[] {gradientColor, textColor};
+                positions = new float[] {0, 1};
+                break;
+            case CENTER:
+                colors = new int[] {textColor, gradientColor, textColor};
+                positions = new float[] {0, 0.5f, 1};
+                break;
+            }
+
+            // The compiler should've warned if new values showed up in the enum, but sanity check
+            Asserts.checkNotNull(colors, "Unhandled gradient type: " + gradientType);
+
+            canvas.save();
+
+            canvas.setFillGradient(
+                PlayN.graphics().createLinearGradient(0, 0, 0, text.height(), colors, positions));
+            canvas.fillText(text, x, y);
+
+            if (underlined) {
+                canvas.setStrokeColor(textColor);
+                for (int ii = 0; ii < text.lineCount(); ii++) {
+                    Rectangle bounds = text.lineBounds(ii);
+                    float sx = x + bounds.x;
+                    float sy = y + bounds.y + bounds.height() - 1;
+                    canvas.fillRect(sx, sy, bounds.width(), 1);
+                }
+            }
+
+            canvas.restore();
+        }
+
+        @Override public boolean equals (Object obj) {
+            if (!(obj instanceof Gradient)) return false;
+            Gradient that = (Gradient)obj;
+            return gradientColor == that.gradientColor && gradientType == that.gradientType;
+        }
+
+        @Override public int hashCode () {
+            return (83 * gradientColor) ^ (113 * gradientType.ordinal());
         }
     }
 }

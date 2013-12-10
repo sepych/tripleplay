@@ -72,6 +72,8 @@ public class Glyph
     @Override public void destroy () {
         _layer.clear();
         _image = null;
+        _preparedWidth = 0;
+        _preparedHeight = 0;
     }
 
     /**
@@ -104,6 +106,8 @@ public class Glyph
         prepare(config.effect.adjustWidth(layout.width()),
             config.effect.adjustHeight(layout.height()));
         config.render(canvas(), layout, 0, 0);
+
+        _layer.get().setTranslation(config.effect.offsetX(), config.effect.offsetY());
     }
 
     protected final GroupLayer _parent;

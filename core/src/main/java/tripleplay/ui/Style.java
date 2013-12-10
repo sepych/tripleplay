@@ -41,40 +41,40 @@ public abstract class Style<V>
     /** Defines horizontal alignment choices. */
     public static enum HAlign {
         LEFT {
-            public float offset (float size, float extent) {
+            @Override public float offset (float size, float extent) {
                 return 0;
             }
         }, RIGHT {
-            public float offset (float size, float extent) {
+            @Override public float offset (float size, float extent) {
                 return (extent - size);
             }
         }, CENTER {
-            public float offset (float size, float extent) {
+            @Override public float offset (float size, float extent) {
                 return (extent - size)/2;
             }
         };
 
         public abstract float offset (float size, float extent);
-    };
+    }
 
     /** Defines vertical alignment choices. */
     public static enum VAlign {
         TOP {
-            public float offset (float size, float extent) {
+            @Override public float offset (float size, float extent) {
                 return 0;
             }
         }, BOTTOM {
-            public float offset (float size, float extent) {
+            @Override public float offset (float size, float extent) {
                 return (extent - size);
             }
         }, CENTER {
-            public float offset (float size, float extent) {
+            @Override public float offset (float size, float extent) {
                 return (extent - size)/2;
             }
         };
 
         public abstract float offset (float size, float extent);
-    };
+    }
 
     /** Defines icon position choices. */
     public static enum Pos {
@@ -89,8 +89,21 @@ public abstract class Style<V>
         VECTOR_OUTLINE,
         /** Draws a shadow below and to the right of the text in the shadow color. */
         SHADOW,
+        /** Draws a gradient from the font color to the gradient color. */
+        GRADIENT,
         /** No text effect. */
-        NONE };
+        NONE
+    }
+
+    /** Defines different types of gradient fills. */
+    public static enum GradientType {
+        /** Gradient color on the bottom (default). */
+        BOTTOM,
+        /** Gradient color on top. */
+        TOP,
+        /** Gradient color in the center. */
+        CENTER
+    }
 
     /** Used to provide concise HAlign style declarations. */
     public static class HAlignStyle extends Style<HAlign> {
@@ -127,21 +140,30 @@ public abstract class Style<V>
         public final Binding<TextEffect> pixelOutline = is(TextEffect.PIXEL_OUTLINE);
         public final Binding<TextEffect> vectorOutline = is(TextEffect.VECTOR_OUTLINE);
         public final Binding<TextEffect> shadow = is(TextEffect.SHADOW);
+        public final Binding<TextEffect> gradient = is(TextEffect.GRADIENT);
         public final Binding<TextEffect> none = is(TextEffect.NONE);
         @Override public TextEffect getDefault (Element<?> elem) { return TextEffect.NONE; }
         TextEffectStyle() { super(true); }
     }
 
+    public static class GradientTypeStyle extends Style<GradientType> {
+        public final Binding<GradientType> bottom = is(GradientType.BOTTOM);
+        public final Binding<GradientType> top = is(GradientType.TOP);
+        public final Binding<GradientType> center = is(GradientType.CENTER);
+        @Override public GradientType getDefault (Element<?> elem) { return GradientType.BOTTOM; }
+        GradientTypeStyle() { super(true); }
+    }
+
     /** The foreground color for an element. Inherited. */
     public static final Style<Integer> COLOR = new Style<Integer>(true) {
-        public Integer getDefault (Element<?> elem) {
+        @Override public Integer getDefault (Element<?> elem) {
             return elem.isEnabled() ? 0xFF000000 : 0xFF666666;
         }
     };
 
     /** The highlight color for an element. Inherited. */
     public static final Style<Integer> HIGHLIGHT = new Style<Integer>(true) {
-        public Integer getDefault (Element<?> elem) {
+        @Override public Integer getDefault (Element<?> elem) {
             return elem.isEnabled() ? 0xAAFFFFFF : 0xAACCCCCC;
         }
     };
@@ -154,7 +176,7 @@ public abstract class Style<V>
             super(inherited);
             _default = defaultVal;
         }
-        public Boolean getDefault (Element<?> mode) { return _default; }
+        @Override public Boolean getDefault (Element<?> mode) { return _default; }
         protected final Boolean _default;
     }
 
@@ -166,6 +188,12 @@ public abstract class Style<V>
 
     /** The shadow offset in pixels. Inherited. */
     public static final Style<Float> SHADOW_Y = newStyle(true, 2f);
+
+    /** The color of the gradient. Inherited. */
+    public static final Style<Integer> GRADIENT_COLOR = newStyle(true, 0xFFC70000);
+
+    /** The type of gradient. Inherited. */
+    public static final GradientTypeStyle GRADIENT_TYPE = new GradientTypeStyle();
 
     /** The stroke width of the outline, when using a vector outline. */
     public static final Style<Float> OUTLINE_WIDTH = newStyle(true, 1f);
@@ -227,10 +255,10 @@ public abstract class Style<V>
      * Creates a text format based on the supplied element's stylings.
      */
     public static TextFormat createTextFormat (Element<?> elem) {
-        TextFormat format = new TextFormat().
+        return new TextFormat().
             withFont(Styles.resolveStyle(elem, Style.FONT)).
-            withAlignment(toAlignment(Styles.resolveStyle(elem, Style.HALIGN)));
-        return format;
+            withAlignment(toAlignment(Styles.resolveStyle(elem, Style.HALIGN))).
+            withAntialias(Styles.resolveStyle(elem, Style.TEXT_EFFECT) != TextEffect.PIXEL_OUTLINE);
     }
 
     /**
@@ -249,6 +277,9 @@ public abstract class Style<V>
             return new EffectRenderer.Shadow(Styles.resolveStyle(elem, Style.SHADOW),
                                              Styles.resolveStyle(elem, Style.SHADOW_X),
                                              Styles.resolveStyle(elem, Style.SHADOW_Y));
+        case GRADIENT:
+            return new EffectRenderer.Gradient(Styles.resolveStyle(elem, Style.GRADIENT_COLOR),
+                                               Styles.resolveStyle(elem, Style.GRADIENT_TYPE));
         default:
             return EffectRenderer.NONE;
         }
@@ -271,7 +302,7 @@ public abstract class Style<V>
      */
     public static <V> Style<V> newStyle (boolean inherited, final V defaultValue) {
         return new Style<V>(inherited) {
-            public V getDefault (Element<?> elem) {
+            @Override public V getDefault (Element<?> elem) {
                 return defaultValue;
             }
         };

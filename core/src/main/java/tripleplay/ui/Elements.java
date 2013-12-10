@@ -11,15 +11,13 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import pythagoras.f.Dimension;
-
 import react.Signal;
 import react.SignalView;
 
 /**
  * Contains other elements and lays them out according to a layout policy.
  */
-public abstract class Elements<T extends Elements<T>> extends Container<T>
+public abstract class Elements<T extends Elements<T>> extends Container.Mutable<T>
 {
     /**
      * Creates a collection with the specified layout.
@@ -38,7 +36,7 @@ public abstract class Elements<T extends Elements<T>> extends Container<T>
     /**
      * Returns the stylesheet configured for this group, or null.
      */
-    public Stylesheet stylesheet () {
+    @Override public Stylesheet stylesheet () {
         return _sheet;
     }
 
@@ -53,10 +51,7 @@ public abstract class Elements<T extends Elements<T>> extends Container<T>
     public T add (Element<?>... children) {
         // remove the children from existing parents, if any
         for (Element<?> child : children) {
-            Container<?> parent = child.parent();
-            if (parent != null) {
-                parent.remove(child);
-            }
+            removeFromParent(child, false);
         }
 
         _children.addAll(Arrays.asList(children));
@@ -69,10 +64,7 @@ public abstract class Elements<T extends Elements<T>> extends Container<T>
 
     public T add (int index, Element<?> child) {
         // remove the child from an existing parent, if it has one
-        Container<?> parent = child.parent();
-        if (parent != null) {
-            parent.remove(child);
-        }
+        Container.removeFromParent(child, false);
 
         _children.add(index, child);
         didAdd(child);
@@ -132,12 +124,12 @@ public abstract class Elements<T extends Elements<T>> extends Container<T>
         invalidate();
     }
 
-    protected void didAdd (Element<?> child) {
+    @Override protected void didAdd (Element<?> child) {
         super.didAdd(child);
         _childAdded.emit(child);
     }
 
-    protected void didRemove (Element<?> child, boolean destroy) {
+    @Override protected void didRemove (Element<?> child, boolean destroy) {
         super.didRemove(child, destroy);
         _childRemoved.emit(child);
     }
@@ -146,17 +138,8 @@ public abstract class Elements<T extends Elements<T>> extends Container<T>
         return new ElementsLayoutData();
     }
 
-    protected class ElementsLayoutData extends LayoutData {
-        @Override public Dimension computeSize (float hintX, float hintY) {
-            return _layout.computeSize((Container<?>)Elements.this, hintX, hintY);
-        }
-
-        @Override public void layout (float left, float top, float width, float height) {
-            // layout our children
-            _layout.layout((Container<?>)Elements.this, left, top, width, height);
-            // layout is only called as part of revalidation, so now we validate our children
-            for (Element<?> child : _children) child.validate();
-        }
+    protected class ElementsLayoutData extends ContainerLayoutData {
+        @Override public Layout getLayout() { return _layout; }
     }
 
     protected final Layout _layout;

@@ -6,30 +6,16 @@
 package tripleplay.ui;
 
 import playn.core.Image;
-import playn.core.Pointer;
-import playn.core.Sound;
-import react.Signal;
 import react.SignalView;
 import react.Slot;
-import react.Value;
-import react.ValueView;
 
 /**
  * A button that displays text, or an icon, or both.
  */
-public class Button extends TextWidget<Button>
-    implements Clickable<Button>
+public class Button extends AbstractTextButton<Button> implements Clickable<Button>
 {
-    /** A delay (in milliseconds) during which a button will remain unclickable after it has been
-     * clicked. This ensures that users don't hammer away at a button, triggering multiple
-     * responses (which code rarely protects against). Inherited. */
-    public static Style<Integer> DEBOUNCE_DELAY = Style.newStyle(true, 500);
-
-    /** The text displayed by this widget, or null. */
-    public final Value<String> text = Value.create((String)null);
-
-    /** The icon displayed by this widget, or null. */
-    public final Value<Icon> icon = Value.<Icon>create(null);
+    /** @deprecated Use {@link Behavior.Click#DEBOUNCE_DELAY}. */
+    @Deprecated public static Style<Integer> DEBOUNCE_DELAY = Behavior.Click.DEBOUNCE_DELAY;
 
     /** Creates a button with no text or icon. */
     public Button () {
@@ -60,30 +46,7 @@ public class Button extends TextWidget<Button>
 
     /** Creates a button with the supplied text and icon. */
     public Button (String text, Icon icon) {
-        enableInteraction();
-        this.text.update(text);
-        this.text.connect(textDidChange());
-        // update after connect so we trigger iconDidChange, in case our icon is a not-ready-image
-        this.icon.connect(iconDidChange());
-        this.icon.update(icon);
-    }
-
-    /**
-     * Binds the text of this button to the supplied reactive value. The current text will be
-     * adjusted to match the state of {@code text}.
-     */
-    public Button bindText (ValueView<String> text) {
-        text.connectNotify(this.text.slot());
-        return this;
-    }
-
-    /**
-     * Binds the icon of this button to the supplied reactive value. The current icon will be
-     * adjusted to match the state of {@code icon}.
-     */
-    public Button bindIcon (ValueView<Icon> icon) {
-        icon.connectNotify(this.icon.slot());
-        return this;
+        super(text, icon);
     }
 
     /** A convenience method for registering a click handler. Assumes you don't need the result of
@@ -94,48 +57,22 @@ public class Button extends TextWidget<Button>
     }
 
     @Override public SignalView<Button> clicked () {
-        return _clicked;
+        return ((Behavior.Click<Button>)_behave).clicked;
     }
 
     @Override public void click () {
-        if (_actionSound != null) _actionSound.play();
-        _clicked.emit(this); // emit a click event
+        ((Behavior.Click<Button>)_behave).click();
     }
 
     @Override public String toString () {
-        return "Button(" + text.get() + ")";
+        return "Button(" + text() + ")";
     }
 
     @Override protected Class<?> getStyleClass () {
         return Button.class;
     }
 
-    @Override protected void layout () {
-        super.layout();
-        _actionSound = resolveStyle(Style.ACTION_SOUND);
-        _debounceDelay = resolveStyle(DEBOUNCE_DELAY);
+    @Override protected Behavior<Button> createBehavior () {
+        return new Behavior.Click<Button>(this);
     }
-
-    @Override protected void onPress (Pointer.Event event) {
-        // ignore press events if we're still in our debounce interval
-        if (event.time() - _lastClickStamp > _debounceDelay) super.onPress(event);
-    }
-
-    @Override protected void onClick (Pointer.Event event) {
-        _lastClickStamp = event.time();
-        click();
-    }
-
-    @Override protected String text () {
-        return text.get();
-    }
-
-    @Override protected Icon icon () {
-        return icon.get();
-    }
-
-    protected final Signal<Button> _clicked = Signal.create();
-    protected Sound _actionSound;
-    protected int _debounceDelay;
-    protected double _lastClickStamp;
 }

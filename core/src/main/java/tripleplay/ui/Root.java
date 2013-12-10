@@ -71,7 +71,7 @@ public class Root extends Elements<Root>
     /**
      * Sets the size of this root element.
      */
-    public Root setSize (float width, float height) {
+    @Override public Root setSize (float width, float height) {
         _size.setSize(width, height);
         invalidate();
         return this;
@@ -135,6 +135,17 @@ public class Root extends Elements<Root>
     public Root setAbsorbsClicks (boolean absorbsClicks) {
         set(Flag.HIT_ABSORB, absorbsClicks);
         return this;
+    }
+
+    /**
+     * Sets this Root's menu host, allowing an application to more manage multiple roots with
+     * a single menu host.
+     */
+    public void setMenuHost (MenuHost host) {
+        if (_menuHost != null) {
+            _menuHost.deactivate();
+        }
+        _menuHost = host;
     }
 
     /**

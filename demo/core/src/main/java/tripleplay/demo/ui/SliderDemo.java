@@ -11,8 +11,10 @@ import playn.core.PlayN;
 import react.Function;
 
 import tripleplay.ui.Background;
+import tripleplay.ui.Behavior;
 import tripleplay.ui.Constraints;
 import tripleplay.ui.Group;
+import tripleplay.ui.Icons;
 import tripleplay.ui.Label;
 import tripleplay.ui.Shim;
 import tripleplay.ui.Slider;
@@ -32,20 +34,21 @@ public class SliderDemo extends DemoScreen
     }
 
     @Override protected Group createIface () {
-        Slider sliders[] = {null, null, null};
         Group iface = new Group(AxisLayout.vertical().gap(10)).add(
             new Shim(15, 15),
             new Label("Click and drag the slider to change the value:"),
             sliderAndLabel(new Slider(0, -100, 100), "-000"),
             new Shim(15, 15),
             new Label("This one counts by 2s:"),
-            sliderAndLabel(new Slider(0, -50, 50).setIncrement(2), "-00"),
+            sliderAndLabel(new Slider(0, -50, 50).setIncrement(2).addStyles(
+                Behavior.Track.HOVER_LIMIT.is(35f)), "-00"),
             new Shim(15, 15),
             new Label("With a background, custom bar and thumb image:"),
             sliderAndLabel(
                 new Slider(0, -50, 50).addStyles(
                     Style.BACKGROUND.is(Background.roundRect(0xFFFFFFFF, 16).inset(4)),
-                    Slider.THUMB_IMAGE.is(PlayN.assets().getImage("images/smiley.png")),
+                    Slider.THUMB_IMAGE.is(Icons.loader(
+                        PlayN.assets().getImage("images/smiley.png"), 24, 24)),
                     Slider.BAR_HEIGHT.is(18f),
                     Slider.BAR_BACKGROUND.is(Background.roundRect(0xFFFF0000, 9))), "-00"));
 

@@ -6,18 +6,18 @@
 package tripleplay.ui;
 
 import playn.core.Connection;
-import playn.core.Image;
 import playn.core.Pointer;
 import pythagoras.f.Dimension;
-import react.Signal;
+
 import react.SignalView;
 import react.Value;
+import tripleplay.util.Layers;
 
 /**
  * An item in a menu. This overrides clicking with a two phase click behavior: clicking an
  * unselected menu item selects it; clicking a selected menu item triggers it.
  */
-public class MenuItem extends TogglableTextWidget<MenuItem>
+public class MenuItem extends TextWidget<MenuItem> implements Togglable<MenuItem>
 {
     /** Modes of text display. */
     public enum ShowText {
@@ -35,14 +35,6 @@ public class MenuItem extends TogglableTextWidget<MenuItem>
      */
     public MenuItem (String label) {
         this(label, (Icon)null);
-    }
-
-    /**
-     * Creates a new menu item with the given label and icon.
-     */
-    @Deprecated
-    public MenuItem (String label, Image icon) {
-        this(label, Icons.image(icon));
     }
 
     /**
@@ -85,31 +77,48 @@ public class MenuItem extends TogglableTextWidget<MenuItem>
         return this;
     }
 
+    /**
+     * Gets the signal that dispatches when a menu item is triggered. Most callers will just
+     * connect to {@link Menu#itemTriggered}.
+     */
+    public SignalView<MenuItem> triggered () {
+        return toToggle().clicked;
+    }
+
+    // from Togglable and Clickable
+    @Override public Value<Boolean> selected () {
+        return toToggle().selected;
+    }
+    @Override public SignalView<MenuItem> clicked () {
+        return toToggle().clicked;
+    }
+    @Override public void click () {
+        toToggle().click();
+    }
+
+    protected void trigger () {
+        toToggle().click();
+    }
+
     protected void setRelay (Connection relay) {
-        if (_relay != null) _relay.disconnect();
+        _relay.disconnect();
         _relay = relay;
     }
 
-    /**
-     * Gets the signal that dispatches when a menu item is triggered. This is created lazily since
-     * most callers will just connect to {@link Menu#itemTriggered}.
-     */
-    public SignalView<MenuItem> triggered () {
-        if (_triggered == null) _triggered = Signal.create();
-        return _triggered;
+    protected Behavior.Toggle<MenuItem> toToggle () {
+        return (Behavior.Toggle<MenuItem>)_behave;
     }
 
-    @Override public SignalView<MenuItem> clicked () { return _clicked; }
-    @Override public void click () { _clicked.emit(this); }
     @Override protected Class<?> getStyleClass () { return MenuItem.class; }
-    @Override protected void onClick (Pointer.Event event) { click(); }
     @Override protected Icon icon () { return icon.get(); }
-    @Override protected void onPointerStart (Pointer.Event event, float x, float y) {}
-    @Override protected void onPointerDrag (Pointer.Event event, float x, float y) {}
-    @Override protected void onPointerEnd (Pointer.Event event, float x, float y) {}
 
-    protected void trigger () {
-        if (_triggered != null) _triggered.emit(this);
+    @Override protected Behavior<MenuItem> createBehavior () {
+        return new Behavior.Toggle<MenuItem>(this) {
+            @Override public void onPointerStart (Pointer.Event event) {}
+            @Override public void onPointerDrag (Pointer.Event event) {}
+            @Override public void onPointerEnd (Pointer.Event event) {}
+            @Override protected void onClick (Pointer.Event event) { click(); }
+        };
     }
 
     @Override protected String text () {
@@ -117,7 +126,7 @@ public class MenuItem extends TogglableTextWidget<MenuItem>
         case NEVER:
             return "";
         case WHEN_ACTIVE:
-            return selected.get() ? text.get() : "";
+            return isSelected() ? text.get() : "";
         case ALWAYS:
         default:
             return text.get();
@@ -128,13 +137,7 @@ public class MenuItem extends TogglableTextWidget<MenuItem>
         return new SizableLayoutData(super.createLayoutData(hintX, hintY), _preferredSize);
     }
 
-    /** Dispatched when the item is clicked. */
-    protected Signal<MenuItem> _triggered;
-
-    /** Dispatched when the item is clicked. */
-    protected final Signal<MenuItem> _clicked = Signal.create();
-
-    protected Connection _relay;
+    protected Connection _relay = Layers.NOT_LISTENING;
 
     /** Size override. */
     protected final Dimension _preferredSize = new Dimension(0, 0);

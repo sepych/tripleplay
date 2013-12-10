@@ -29,6 +29,69 @@ import tripleplay.ui.util.Insets;
  */
 public class Field extends TextWidget<Field>
 {
+    /** Creates a style binding for the given maximum length. */
+    public static Style.Binding<Validator> maxLength (int max) {
+        return VALIDATOR.is(new MaxLength(max));
+    }
+
+    /** Checks if the platform has native text fields. */
+    public static boolean hasNative () {
+        return TPPlatform.instance().hasNativeTextFields();
+    }
+
+    /** Exposes protected field information required for native fields. */
+    public final class Native {
+        /** Resolves the given style for the field. */
+        public <T> T resolveStyle (Style<T> style) {
+            return Field.this.resolveStyle(style);
+        }
+
+        /** Tests if the proposed text is valid. */
+        public boolean isValid (String text) {
+            return Field.this.textIsValid(text);
+        }
+
+        /** Transforms the given text. */
+        public String transform (String text) {
+            return Field.this.transformText(text);
+        }
+
+        /** A signal that is dispatched when the native text field has lost focus. Value is false if
+         * editing was canceled */
+        public Signal<Boolean> finishedEditing () {
+            return _finishedEditing;
+        }
+
+        public Field field () {
+            return Field.this;
+        }
+    }
+
+    /** For native text fields, decides whether to block a keypress based on the proposed content
+     * of the field. */
+    public interface Validator {
+        /** Return false if the keypress causing this text should be blocked. */
+        boolean isValid (String text);
+    }
+
+    /** For native text fields, transforms text during typing. */
+    public interface Transformer {
+        /** Transform the specified text. */
+        public String transform (String text);
+    }
+
+    /** Blocks keypresses for a native text field when the length is at a given maximum. */
+    public static class MaxLength implements Validator {
+        /** The maximum length accepted. */
+        public final int max;
+        public MaxLength (int max) {
+            this.max = max;
+        }
+        @Override public boolean isValid (String text) {
+            return text.length() <= max;
+        }
+    }
+
     /** If on a platform that utilizes native fields and this is true, the native field is
      * displayed whenever this Field is visible, and the native field is responsible for all text
      * rendering. If false, the native field is only displayed while actively editing (after a user
@@ -51,10 +114,12 @@ public class Field extends TextWidget<Field>
     /** Sets the Keyboard.TextType in use by this Field. */
     public static final Style<TextType> TEXT_TYPE = Style.newStyle(false, TextType.DEFAULT);
 
-    /** Sets the maximum number of characters that can be entered by this Field. Currently only
-     * supported by Native fields. Anything less than 1 indicates unlimited (or limited by the
-     * platform only). */
-    public static final Style<Integer> MAXIMUM_INPUT_LENGTH = Style.newStyle(false, 0);
+    /** Sets the validator to use when censoring keypresses into native text fields.
+     * @see MaxLength */
+    public static final Style<Validator> VALIDATOR = Style.newStyle(true, null);
+
+    /** Sets the transformner to use when updating native text fields while being typed into. */
+    public static final Style<Transformer> TRANSFORMER = Style.newStyle(true, null);
 
     /** Sets the label used on the "return" key of the virtual keyboard on native keyboards. Be
      * aware that some platforms (such as iOS) have a limited number of options. The underlying
@@ -81,26 +146,19 @@ public class Field extends TextWidget<Field>
     }
 
     public Field (String initialText, Styles styles) {
-        enableInteraction();
         setStyles(styles);
 
-        if (TPPlatform.instance().hasNativeTextFields()) {
-            _nativeField = TPPlatform.instance().createNativeTextField();
-            // set our default validator and transformer
-            setValidator(null);
-            setTransformer(null);
-            text = _nativeField.text();
-            _finishedEditing = _nativeField.finishedEditing();
+        text = Value.create("");
+        _finishedEditing = Signal.create();
+
+        if (hasNative()) {
             _finishedEditing.connect(new Slot<Boolean>() {
                 @Override public void onEmit (Boolean event) {
-                    if (!fulltimeNativeField()) updateMode(false);
+                    if (!_fullTimeNative) updateMode(false);
                 }
             });
-        } else {
-            _nativeField = null;
-            text = Value.create("");
-            _finishedEditing = Signal.create();
         }
+
         this.text.update(initialText);
         this.text.connect(textDidChange());
     }
@@ -111,45 +169,10 @@ public class Field extends TextWidget<Field>
     }
 
     /**
-     * Configures the keyboard type to use when text is requested via a popup.
-     * @deprecated Use the TEXT_TYPE Style instead.
-     */
-    @Deprecated public Field setTextType (Keyboard.TextType type) {
-        return addStyles(TEXT_TYPE.is(type));
-    }
-
-    /**
      * Configures the label to be displayed when text is requested via a popup.
      */
     public Field setPopupLabel (String label) {
         _popupLabel = label;
-        return this;
-    }
-
-    /**
-     * Set the text field validator for use with this field. The default is to go through
-     * {@link #textIsValid(String)}. Pass in null to set/restore the default validator.
-     *
-     * Note that setting a custom validator will bypass checking of the
-     * {@link #MAXIMUM_INPUT_LENGTH} style.
-     *
-     * @return this for call chaining.
-     */
-    public Field setValidator (NativeTextField.Validator validator) {
-        if (_nativeField != null)
-            _nativeField.setValidator(validator == null ? _defaultValidator : validator);
-        return this;
-    }
-
-    /**
-     * Set the text field transformer for use with this field. The default is to go through
-     * {@link #transformText(String)}. Pass in null to set/restore the default transformer.
-     *
-     * @return this for call chaining.
-     */
-    public Field setTransformer (NativeTextField.Transformer transformer) {
-        if (_nativeField != null)
-            _nativeField.setTransformer(transformer == null ? _defaultTransformer : transformer);
         return this;
     }
 
@@ -163,30 +186,44 @@ public class Field extends TextWidget<Field>
         return this;
     }
 
-    /**
-     * Returns true if this Field is backed by a native field and that field currently has keyboard
-     * (virtual or physical) focus.
-     */
-    public boolean hasFocus () {
-        return _nativeField != null && _nativeField.hasFocus();
+    /** Attempt to focus on this field, if it is backed by a native field. If the platform
+     * uses a virtual keyboard, this will cause it slide up, just as though the use had tapped
+     * the field. For hardware keyboard, a blinking caret will appear in the field. */
+    public void focus () {
+        if (_nativeField != null) _nativeField.focus();
+    }
+
+    @Override public Field setVisible (boolean visible) {
+        if (_nativeField != null) {
+            if (visible) {
+                _nativeField.add();
+            } else {
+                _nativeField.remove();
+            }
+        }
+        return super.setVisible(visible);
+    }
+
+    /** Returns this field's native text field, if it has one, otherwise null. */
+    public NativeTextField exposeNativeField () {
+        return _nativeField;
     }
 
     /**
-     * Used with native fields. Returning false form this method will cancel a text edit from the
-     * user. The default implementation supplied here honors the MAXIMUM_INPUT_LENGTH Field style.
+     * Main entry point for deciding whether to reject keypresses on a native field. By default,
+     * consults the current validator instance, set up by {@link #VALIDATOR}.
      */
     protected boolean textIsValid (String text) {
-        int maxLength = _maxFieldLength;
-        int textLength = text == null ? 0 : text.length();
-        return maxLength < 1 || textLength <= maxLength;
+        return _validator == null || _validator.isValid(text);
     }
 
     /**
      * Called when the native field's value is changed. Override and return a modified value to
-     * perform text transformation while the user is editing the field.
+     * perform text transformation while the user is editing the field. By default, consults
+     * the current transformer instance, set up by {@link #TRANSFORMER}.
      */
     protected String transformText (String text) {
-        return text;
+        return _transformer == null ? text : _transformer.transform(text);
     }
 
     @Override protected Class<?> getStyleClass () {
@@ -204,19 +241,33 @@ public class Field extends TextWidget<Field>
         return null; // fields never have an icon
     }
 
-    @Override protected void onPointerStart (Pointer.Event event, float x, float y) {
-        super.onPointerStart(event, x, y);
-        if (!isEnabled() || fulltimeNativeField()) return;
+    @Override protected void wasRemoved () {
+        super.wasRemoved();
+        // make sure the field is gone
+        updateMode(false);
+    }
 
-        if (_nativeField != null) {
-            event.capture();
+    @Override protected Behavior<Field> createBehavior () {
+        return new Behavior.Select<Field>(this) {
+            @Override public void onClick (Pointer.Event event) {
+                if (!_fullTimeNative) startEdit();
+            }
+        };
+    }
+
+    @Override protected LayoutData createLayoutData (float hintX, float hintY) {
+        return new FieldLayoutData(hintX, hintY);
+    }
+
+    protected void startEdit () {
+        if (hasNative()) {
             updateMode(true);
             _nativeField.focus();
 
         } else {
             // TODO: multi-line keyboard.getText
-            PlayN.keyboard().getText(resolveStyle(TEXT_TYPE), _popupLabel, text.get(),
-                new Callback<String>() { @Override public void onSuccess (String result) {
+            PlayN.keyboard().getText(_textType, _popupLabel, text.get(), new Callback<String>() {
+                @Override public void onSuccess (String result) {
                     // null result is a canceled entry dialog
                     if (result != null) text.update(result);
                     _finishedEditing.emit(result != null);
@@ -224,20 +275,6 @@ public class Field extends TextWidget<Field>
                 @Override public void onFailure (Throwable cause) { /* noop */ }
             });
         }
-    }
-
-    @Override protected void wasRemoved () {
-        super.wasRemoved();
-        // make sure the field is gone
-        updateMode(false);
-    }
-
-    @Override protected LayoutData createLayoutData (float hintX, float hintY) {
-        return new FieldLayoutData(hintX, hintY);
-    }
-
-    protected boolean fulltimeNativeField () {
-        return _nativeField != null && resolveStyle(FULLTIME_NATIVE_FIELD);
     }
 
     protected Rectangle getNativeFieldBounds () {
@@ -249,82 +286,50 @@ public class Field extends TextWidget<Field>
     }
 
     protected void updateMode (boolean nativeField) {
-        if (_nativeField == null) return;
+        if (!hasNative()) return;
         if (nativeField) {
-            NativeTextField.Mode mode = NativeTextField.Mode.NORMAL;
-            boolean multiLine = resolveStyle(MULTILINE);
-            if (resolveStyle(SECURE_TEXT_ENTRY)) {
-                if (multiLine) Log.log.warning("Ignoring MULTILINE Style");
-                mode = NativeTextField.Mode.SECURE;
-            } else if (multiLine) {
-                mode = NativeTextField.Mode.MULTI_LINE;
-            }
+            _nativeField = _nativeField == null ?
+                TPPlatform.instance().createNativeTextField(new Native()) :
+                TPPlatform.instance().refresh(_nativeField);
 
-            NativeTextField newField = _nativeField.refreshMode(mode);
-            if (newField != _nativeField) {
-                _nativeField.remove();
-                _nativeField = newField;
-            }
-            _nativeField.setTextType(resolveStyle(TEXT_TYPE))
-                .setFont(resolveStyle(Style.FONT))
-                .setAutocapitalization(resolveStyle(AUTOCAPITALIZATION))
-                .setAutocorrection(resolveStyle(AUTOCORRECTION))
-                .setReturnKeyLabel(resolveStyle(RETURN_KEY_LABEL))
-                .setEnabled(isEnabled());
+            _nativeField.setEnabled(isEnabled());
             updateNativeFieldBounds();
             _nativeField.add();
-            setGlyphLayerAlpha(0);
-        } else {
+            setGlyphLayerVisible(false);
+        } else if (_nativeField != null) {
             _nativeField.remove();
-            setGlyphLayerAlpha(1);
+            setGlyphLayerVisible(true);
         }
     }
 
-    @Override public Field setVisible (boolean visible)
-    {
-        if (_nativeField != null) {
-            if (visible) {
-                _nativeField.add();
-            } else {
-                _nativeField.remove();
-            }
-        }
-        return super.setVisible(visible);
+    protected void setGlyphLayerVisible (boolean visible) {
+        if (_tglyph.layer() != null) _tglyph.layer().setVisible(visible);
     }
 
-    protected void setGlyphLayerAlpha (float alpha) {
-        if (_tglyph.layer() != null) _tglyph.layer().setAlpha(alpha);
-    }
-
-    protected class FieldLayoutData extends TextLayoutData
-    {
+    protected class FieldLayoutData extends TextLayoutData {
         public FieldLayoutData (float hintX, float hintY) {
             super(hintX, hintY);
         }
 
-        @Override  public void layout (float left, float top, float width, float height) {
+        @Override public void layout (float left, float top, float width, float height) {
             super.layout(left, top, width, height);
-            if (fulltimeNativeField()) updateMode(true);
+            _fullTimeNative = hasNative() && resolveStyle(FULLTIME_NATIVE_FIELD);
+            if (_fullTimeNative || _nativeField != null) updateMode(true);
 
-            // make sure our cached value is up to date
-            _maxFieldLength = resolveStyle(MAXIMUM_INPUT_LENGTH);
+            // make sure our cached bits are up to date
+            _validator = resolveStyle(VALIDATOR);
+            _transformer = resolveStyle(TRANSFORMER);
+            _textType = resolveStyle(TEXT_TYPE);
         }
     }
 
     protected NativeTextField _nativeField;
-    protected final NativeTextField.Transformer _defaultTransformer =
-        new NativeTextField.Transformer() {
-            @Override public String transform (String text) { return transformText(text); }
-        };
-    protected final NativeTextField.Validator _defaultValidator =
-        new NativeTextField.Validator() {
-            @Override public boolean isValid (String text) { return textIsValid(text); }
-        };
+    protected Validator _validator;
+    protected Transformer _transformer;
+    protected TextType _textType;
+    protected boolean _fullTimeNative;
     protected final Signal<Boolean> _finishedEditing;
 
     // used when popping up a text entry interface on mobile platforms
     protected String _popupLabel;
-
-    // Set via the MAXIMUM_INPUT_LENGTH style during widget validation
-    protected int _maxFieldLength = 0;
 }

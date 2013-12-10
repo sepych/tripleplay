@@ -13,12 +13,15 @@ import playn.core.Layer;
 import playn.core.TextFormat;
 import playn.core.TextLayout;
 import playn.core.util.Callback;
+
 import static playn.core.PlayN.graphics;
 
 import react.Slot;
 import react.UnitSlot;
 
 import tripleplay.util.EffectRenderer;
+import tripleplay.util.TextConfig;
+import tripleplay.util.Glyph;
 
 /**
  * An abstract base class for widgets that contain text.
@@ -73,6 +76,11 @@ public abstract class TextWidget<T extends TextWidget<T>> extends Widget<T>
         }
     }
 
+    // this is broken out so that subclasses can extend this action
+    protected EffectRenderer createEffectRenderer () {
+        return Style.createEffectRenderer(this);
+    }
+
     @Override protected LayoutData createLayoutData (float hintX, float hintY) {
         return new TextLayoutData(hintX, hintY);
     }
@@ -84,13 +92,11 @@ public abstract class TextWidget<T extends TextWidget<T>> extends Widget<T>
         public final int iconGap = resolveStyle(Style.ICON_GAP);
         public final boolean iconCuddle = resolveStyle(Style.ICON_CUDDLE);
         public final IconEffect iconEffect = resolveStyle(Style.ICON_EFFECT);
-        public final int color = resolveStyle(Style.COLOR);
-        public final boolean underlined = resolveStyle(Style.UNDERLINE);
         public final boolean wrap = resolveStyle(Style.TEXT_WRAP);
         public final boolean autoShrink = resolveStyle(Style.AUTO_SHRINK);
 
+        public final TextConfig tconfig;
         public TextLayout text; // mostly final, only changed by autoShrink
-        public final EffectRenderer renderer;
         public final Icon icon;
 
         public TextLayoutData (float hintX, float hintY) {
@@ -109,13 +115,14 @@ public abstract class TextWidget<T extends TextWidget<T>> extends Widget<T>
 
             // layout our text, if we have any
             if (haveText) {
-                renderer = Style.createEffectRenderer(TextWidget.this);
                 TextFormat format = Style.createTextFormat(TextWidget.this);
                 if (hints.width > 0 && wrap) format = format.withWrapWidth(hints.width);
+                tconfig = new TextConfig(format, resolveStyle(Style.COLOR), createEffectRenderer(),
+                                         resolveStyle(Style.UNDERLINE));
                 // TODO: should we do something with a y-hint?
                 text = graphics().layoutText(curtext, format);
             } else {
-                renderer = null;
+                tconfig = null;
                 text = null;
             }
         }
@@ -246,7 +253,6 @@ public abstract class TextWidget<T extends TextWidget<T>> extends Widget<T>
 
             // create a canvas no larger than the text, constrained to the available size
             float tgwidth = Math.min(availWidth, twidth), tgheight = Math.min(availHeight, theight);
-            _tglyph.prepare(tgwidth, tgheight);
 
             // we do some extra fiddling here because one may want to constrain the height of a
             // button such that the text is actually cut off on the top and/or bottom because fonts
@@ -254,16 +260,28 @@ public abstract class TextWidget<T extends TextWidget<T>> extends Widget<T>
             // snugly into your button
             float ox = MathUtil.ifloor(halign.offset(twidth, availWidth));
             float oy = MathUtil.ifloor(valign.offset(theight, availHeight));
-            renderer.render(_tglyph.canvas(), text, color, underlined,
-                Math.min(ox, 0), Math.min(oy, 0));
-            _tglyph.layer().setTranslation(tx + Math.max(ox, 0), ty + Math.max(oy, 0));
+
+            // only re-render our text if something actually changed
+            if (!text.text().equals(_renderedText) || !tconfig.equals(_renderedTConfig) ||
+                tgwidth != _tglyph.preparedWidth() || tgheight != _tglyph.preparedHeight()) {
+                _tglyph.prepare(tgwidth, tgheight);
+                tconfig.render(_tglyph.canvas(), text, Math.min(ox, 0), Math.min(oy, 0));
+                _renderedText = text.text();
+                _renderedTConfig = tconfig;
+            }
+
+            // always set the translation since other non-text style changes can affect it
+            _tglyph.layer().setTranslation(tx + Math.max(ox, 0) + tconfig.effect.offsetX(),
+                                           ty + Math.max(oy, 0) + tconfig.effect.offsetY());
         }
 
-        protected float textWidth () { return renderer.adjustWidth(text.width()); }
-        protected float textHeight () { return renderer.adjustHeight(text.height()); }
+        protected float textWidth () { return tconfig.effect.adjustWidth(text.width()); }
+        protected float textHeight () { return tconfig.effect.adjustHeight(text.height()); }
     }
 
-    protected final Glyph _tglyph = new Glyph();
+    protected final Glyph _tglyph = new Glyph(layer);
+    protected String _renderedText;
+    protected TextConfig _renderedTConfig;
     protected Layer _ilayer;
 
     protected static final float MIN_FONT_SIZE = 6; // TODO: make customizable?

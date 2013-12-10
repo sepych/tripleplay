@@ -48,6 +48,7 @@ public class Emitter
      * configures {@link #generator} with a generator that adds particles as desired.
      */
     public void addParticles (int count) {
+        if (_buffer.isFull()) return;
         for (int ii = 0, ll = initters.size(); ii < ll; ii++) initters.get(ii).willInit(count);
         _buffer.add(count, _parts.now(), initters);
     }
@@ -64,7 +65,7 @@ public class Emitter
      * Configures this emitter to self-destruct when it runs out of particles.
      */
     public void destroyOnEmpty () {
-        onEmpty.connect(new UnitSlot() { public void onEmit () { destroy(); }});
+        onEmpty.connect(new UnitSlot() { @Override public void onEmit () { destroy(); }});
     }
 
     Emitter (Particles parts, final int maxParticles, final Image image) {

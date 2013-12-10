@@ -7,11 +7,14 @@ package tripleplay.util;
 
 import playn.core.Canvas;
 import playn.core.CanvasImage;
+import playn.core.Connection;
 import playn.core.GroupLayer;
 import playn.core.ImageLayer;
 import playn.core.ImmediateLayer;
 import playn.core.Layer;
 import playn.core.PlayN;
+import playn.core.Pointer;
+import playn.core.Surface;
 import playn.core.canvas.CanvasSurface;
 import pythagoras.f.AffineTransform;
 import pythagoras.f.IPoint;
@@ -24,6 +27,23 @@ import pythagoras.f.Transform;
  */
 public class Layers
 {
+    /**
+     * No-op connection, for improving nullity assumptions.
+     */
+    public static final Connection NOT_LISTENING = new Connection() {
+        @Override public void disconnect () {}
+    };
+
+    /** Prevents parent handling for pointer events. This is useful if you have for example a
+     * button inside a scrolling container and need to enable event propagation. */
+    public static final Pointer.Listener NO_PROPAGATE = new Pointer.Listener() {
+        @Override public void onPointerStart (Pointer.Event event) { stop(event); }
+        @Override public void onPointerEnd (Pointer.Event event) { stop(event); }
+        @Override public void onPointerDrag (Pointer.Event event) { stop(event); }
+        @Override public void onPointerCancel (Pointer.Event event) { stop(event); }
+        void stop (Pointer.Event event) { event.flags().setPropagationStopped(true); }
+    };
+
     /**
      * Transforms a point from one Layer's coordinate system to another's.
      */
@@ -61,6 +81,42 @@ public class Layers
             if (layer == group) return true;
         }
         return false;
+    }
+
+    /**
+     * Creates a new group with the given children.
+     */
+    public static GroupLayer group (Layer... children) {
+        GroupLayer gl = PlayN.graphics().createGroupLayer();
+        for (Layer l : children) gl.add(l);
+        return gl;
+    }
+
+    /**
+     * Adds a child layer to a group and returns the child.
+     */
+    public static <T extends Layer> T addChild (GroupLayer parent, T child) {
+        parent.add(child);
+        return child;
+    }
+
+    /**
+     * Adds a child group to a parent group and returns the child.
+     */
+    public static GroupLayer addNewGroup (GroupLayer parent) {
+        return addChild(parent, PlayN.graphics().createGroupLayer());
+    }
+
+    /**
+     * Creates an immediate layer that renders a simple rectangle of the given color,
+     * width and height.
+     */
+    public static Layer solid (final int color, final float width, final float height) {
+        return PlayN.graphics().createImmediateLayer(new ImmediateLayer.Renderer() {
+            public void render (Surface surf) {
+                surf.setFillColor(color).fillRect(0, 0, width, height);
+            }
+        });
     }
 
     /**
@@ -114,6 +170,23 @@ public class Layers
         CanvasImage image = PlayN.graphics().createImage(width, height);
         capture(layer, image.canvas());
         return image;
+    }
+
+    /**
+     * Creates a connection that will disconnect multiple other connections. NOTE: for best
+     * retention practices, once the resulting connection is disconnected, the given ones
+     * will no longer be referenced and hence will only have their {@code disconnect} method
+     * called once (via the returned object).
+     */
+    public static Connection join (final Connection... connections) {
+        return new Connection() {
+            @Override public void disconnect () {
+                if (_conns == null) return;
+                for (Connection conn : _conns) conn.disconnect();
+                _conns = null;
+            }
+            protected Connection[] _conns = connections;
+        };
     }
 
     /** Helper function for {@link #totalBounds}. */

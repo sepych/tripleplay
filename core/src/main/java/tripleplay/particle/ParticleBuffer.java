@@ -33,9 +33,9 @@ public class ParticleBuffer
     public static final int M10 = M01+1;
     /** The offset of the m11 transform element in the particle buffer. */
     public static final int M11 = M10+1;
-    /** The offset of the tx trasform element in the particle buffer. */
+    /** The offset of the tx transform element in the particle buffer. */
     public static final int TX = M11+1;
-    /** The offset of the ty trasform element in the particle buffer. */
+    /** The offset of the ty transform element in the particle buffer. */
     public static final int TY = TX+1;
 
     /** The offset of the alpha + red tint in the particle buffer.
@@ -103,10 +103,13 @@ public class ParticleBuffer
         }
     }
 
+    public boolean isFull () {
+        return _live >= _maxParticles;
+    }
+
     /** Adds {@code count} particles to this buffer, and initializes them with {@code initters}. */
     public void add (int count, float now, List<? extends Initializer> initters) {
-        // optimization when we're full
-        if (_live >= _maxParticles) return;
+        if (isFull()) return;
         // TODO: keep track of a last added position and start from there
         int pp = 0, ppos = 0, icount = initters.size(), initted = 0;
         for (int aa = 0; aa < alive.length && initted < count; aa++) {
@@ -151,8 +154,9 @@ public class ParticleBuffer
                 }
 
                 // the particle lives, apply the effectors
-                for (int ee = 0; ee < ecount; ee++)
+                for (int ee = 0; ee < ecount; ee++) {
                     effectors.get(ee).apply(pp, data, ppos, now, dt);
+                }
                 living++;
             }
 

@@ -5,9 +5,9 @@
 
 package tripleplay.platform;
 
-import playn.core.Keyboard;
+import playn.core.Image;
 import playn.ios.IOSPlatform;
-import react.ValueView;
+import tripleplay.ui.Field;
 
 /**
  * Implements iOS-specific TriplePlay services.
@@ -28,20 +28,18 @@ public class IOSTPPlatform extends TPPlatform
         return true;
     }
 
-    @Override public NativeTextField createNativeTextField () {
-        return new IOSNativeTextField.SingleLine(_fieldHandler, null);
+    @Override public NativeTextField createNativeTextField (Field.Native field) {
+        return (field.resolveStyle(Field.MULTILINE) ?
+            new IOSNativeTextField.MultiLine(_fieldHandler, null, field) :
+            new IOSNativeTextField.SingleLine(_fieldHandler, null, field)).refresh();
     }
 
-    @Override public void setVirtualKeyboardController (VirtualKeyboardController ctrl) {
-        _fieldHandler.setVirtualKeyboardController(ctrl);
+    @Override public NativeTextField refresh (NativeTextField previous) {
+        return ((IOSNativeTextField)previous).refresh();
     }
 
-    @Override public void setVirtualKeyboardListener (Keyboard.Listener listener) {
-        _fieldHandler.setKeyboardListener(listener);
-    }
-
-    @Override public ValueView<Boolean> virtualKeyboardActive () {
-        return _fieldHandler.virtualKeyboardActive();
+    @Override public ImageOverlay createImageOverlay (Image image) {
+        return new IOSImageOverlay(image);
     }
 
     private IOSTPPlatform (IOSPlatform platform) {

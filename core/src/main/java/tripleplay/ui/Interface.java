@@ -158,33 +158,40 @@ public class Interface
      * be added to any other interfaces. Generally you should use {@link #createRoot}, but this
      * method is exposed for callers with special needs.
      */
-    public Root addRoot (Root root) {
+    public <R extends Root> R addRoot (R root) {
         _roots.add(root);
         return root;
     }
 
     /**
-     * Removes the supplied root element from this interface. If the root's layer has a parent, the
-     * layer will be removed from the parent as well. This leaves the Root's layer in existence, so
-     * it may be used again. If you're done with the Root and all of the elements inside of it, call
-     * destroyRoot to free its resources.
+     * Removes the supplied root element from this interface, iff it's currently added. If the
+     * root's layer has a parent, the layer will be removed from the parent as well. This leaves
+     * the Root's layer in existence, so it may be used again. If you're done with the Root and all
+     * of the elements inside of it, call {@link #destroyRoot} to free its resources.
+     *
+     * @return true if the root was removed, false if it was not currently added.
      */
-    public void removeRoot (Root root) {
-        _roots.remove(root);
+    public boolean removeRoot (Root root) {
+        if (!_roots.remove(root)) return false;
         root.wasRemoved();
         if (root.layer.parent() != null) root.layer.parent().remove(root.layer);
+        return true;
     }
 
     /**
-     * Removes the supplied root element from this interface and destroys its layer. Destroying the
-     * layer destroys the layers of all elements contained in the root as well. Use this method if
-     * you're done with the Root. If you'd like to reuse it, call removeRoot instead.
+     * Removes the supplied root element from this interface and destroys its layer, iff it's
+     * currently added. Destroying the layer destroys the layers of all elements contained in the
+     * root as well. Use this method if you're done with the Root. If you'd like to reuse it, call
+     * {@link #removeRoot} instead.
+     *
+     * @return true if the root was removed and destroyed, false if it was not currently added.
      */
-    public void destroyRoot (Root root) {
-        _roots.remove(root);
+    public boolean destroyRoot (Root root) {
+        if (!_roots.remove(root)) return false;
         root.set(Flag.WILL_DESTROY, true);
         root.wasRemoved();
         root.layer.destroy();
+        return true;
     }
 
     /**
